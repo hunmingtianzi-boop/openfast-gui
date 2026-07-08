@@ -1,0 +1,56 @@
+{
+  "name": "wind_wave_regular",
+  "description": "稳态风 + 规则波联合运行工况。",
+  "cases": [
+    {
+      "name": "wind12p8_waveH2_T10",
+      "notes": "12.8 m/s 稳态风 + 规则波 Hs=2 m，Tp=10 s。",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 180,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 12.8
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 1,
+          "WaveHs": 2.0,
+          "WaveTp": 10.0,
+          "WaveDir": 0
+        }
+      }
+    },
+    {
+      "name": "wind16_waveH4_T12",
+      "notes": "16 m/s 稳态风 + 规则波 Hs=4 m，Tp=12 s。",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 180,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 16.0
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 1,
+          "WaveHs": 4.0,
+          "WaveTp": 12.0,
+          "WaveDir": 0
+        }
+      }
+    }
+  ]
+}

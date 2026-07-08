@@ -1,0 +1,48 @@
+{
+  "name": "regular_wave_parked",
+  "description": "停机/无气动规则波水动力工况。",
+  "cases": [
+    {
+      "name": "wave_H2_T10",
+      "notes": "无风、无气动、无控制；规则波 Hs=2 m，Tp=10 s。",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 180,
+          "CompInflow": 0,
+          "CompAero": 0,
+          "CompServo": 0,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 1,
+          "WaveHs": 2.0,
+          "WaveTp": 10.0,
+          "WaveDir": 0
+        }
+      }
+    },
+    {
+      "name": "wave_H4_T12",
+      "notes": "无风、无气动、无控制；规则波 Hs=4 m，Tp=12 s。",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 180,
+          "CompInflow": 0,
+          "CompAero": 0,
+          "CompServo": 0,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 1,
+          "WaveHs": 4.0,
+          "WaveTp": 12.0,
+          "WaveDir": 0
+        }
+      }
+    }
+  ]
+}

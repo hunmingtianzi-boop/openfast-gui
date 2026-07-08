@@ -1,0 +1,24 @@
+{
+  "name": "still_water_parked",
+  "description": "停机、无风、静水基准工况。",
+  "cases": [
+    {
+      "name": "parked_still_water_60s",
+      "notes": "无风、无气动、无控制；HydroDyn/MoorDyn 开启，WaveMod=0。",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 60,
+          "CompInflow": 0,
+          "CompAero": 0,
+          "CompServo": 0,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenFAST 工况控制台</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="app-title">OpenFAST 工况控制台</div>
+      <div class="app-subtitle" id="workspacePath">D:\OpenFast\openfast_user_workspace</div>
+    </div>
+    <div class="top-actions">
+      <button id="refreshBtn" class="button subtle">刷新</button>
+      <button id="saveBtn" class="button">保存场景</button>
+      <button id="generateBtn" class="button strong">生成输入</button>
+      <button id="runBtn" class="button danger">运行 OpenFAST</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>场景文件</h2>
+          <button id="newScenarioBtn" class="mini-button">新建</button>
+        </div>
+        <div id="scenarioList" class="scenario-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>运行接口</h2>
+        </div>
+        <div id="interfaceModes" class="mode-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>官方参考</h2>
+        </div>
+        <div id="docLinks" class="doc-list"></div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="strip">
+        <label>
+          <span>文件名</span>
+          <input id="scenarioFile" value="ui_scenario.json">
+        </label>
+        <label>
+          <span>场景名</span>
+          <input id="scenarioName" value="ui_scenario">
+        </label>
+        <label class="wide">
+          <span>说明</span>
+          <input id="scenarioDescription" value="Created from visual UI">
+        </label>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="compose">工况配置</button>
+        <button class="tab" data-tab="advanced">高级键值</button>
+        <button class="tab" data-tab="hydro">水动力构件</button>
+        <button class="tab" data-tab="catalog">参数库</button>
+        <button class="tab" data-tab="json">JSON</button>
+        <button class="tab" data-tab="runlog">运行日志</button>
+      </div>
+
+      <section id="tab-compose" class="tab-page active">
+        <div class="grid-2">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>模式预设</h2>
+              <button id="applyPresetBtn" class="mini-button">应用到当前 case</button>
+            </div>
+            <select id="presetSelect"></select>
+            <p id="presetDescription" class="hint"></p>
+            <div class="preset-grid">
+              <label><span>TMax</span><input id="quickTMax" type="number" step="1" value="120"></label>
+              <label><span>Wind m/s</span><input id="quickWind" type="number" step="0.1" value="12.8"></label>
+              <label><span>WaveMod</span><select id="quickWaveMod"><option value="0">0 none</option><option value="1">1 regular</option><option value="2">2 JONSWAP/PM</option><option value="5">5 external elev</option><option value="6">6 external kin</option><option value="7">7 components</option></select></label>
+              <label><span>Hs m</span><input id="quickHs" type="number" step="0.1" value="2"></label>
+              <label><span>Tp s</span><input id="quickTp" type="number" step="0.1" value="10"></label>
+              <label><span>WaveDir deg</span><input id="quickWaveDir" type="number" step="1" value="0"></label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>当前 case</h2>
+              <button id="addCaseBtn" class="mini-button">添加 case</button>
+            </div>
+            <div id="caseList" class="case-list"></div>
+            <div class="case-editor">
+              <label><span>case 名</span><input id="caseName"></label>
+              <label><span>备注</span><input id="caseNotes"></label>
+              <div class="switch-row">
+                <label><input id="overwriteRun" type="checkbox" checked> 覆盖同名输出</label>
+                <label><input id="continueOnFail" type="checkbox"> 失败后继续</label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>主模块开关</h2>
+            <span class="hint">写入 FOCAL_C4.fst</span>
+          </div>
+          <div class="switch-grid" id="moduleSwitches"></div>
+        </section>
+      </section>
+
+      <section id="tab-advanced" class="tab-page">
+        <div class="grid-2 advanced-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>键值覆盖</h2>
+              <button id="addSetBtn" class="mini-button">添加</button>
+            </div>
+            <div id="setRows" class="rows"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>HydroDyn 附加矩阵</h2>
+              <button id="addMatrixBtn" class="mini-button">清空修改</button>
+            </div>
+            <div id="matrixRows" class="rows"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-hydro" class="tab-page">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>HydroDyn 表格状态</h2>
+            <div class="panel-actions">
+              <button id="addMorisonBtn" class="mini-button">添加 Morison 构件</button>
+              <button id="resetHydroTablesBtn" class="mini-button">恢复模板表格</button>
+            </div>
+          </div>
+          <div id="hydroStatus" class="hint"></div>
+        </section>
+        <div class="hydro-grid">
+          <section class="panel">
+            <div class="panel-head"><h2>Morison 构件</h2></div>
+            <div id="hydroMembers"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>节点</h2></div>
+            <div id="hydroJoints"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>圆柱截面属性</h2></div>
+            <div id="hydroProps"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>成员独立 Cd/Ca/Cp</h2></div>
+            <div id="hydroMemberCoeffs"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Simple Cd/Ca/Cp</h2></div>
+            <div id="hydroSimple"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>轴向系数</h2></div>
+            <div id="hydroAxial"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-catalog" class="tab-page">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>本地模板参数</h2>
+            <input id="catalogSearch" class="search" placeholder="搜索 key 或文件">
+          </div>
+          <div id="catalog" class="catalog"></div>
+        </section>
+      </section>
+
+      <section id="tab-json" class="tab-page">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>场景 JSON</h2>
+            <button id="formatJsonBtn" class="mini-button">从表单刷新</button>
+          </div>
+          <textarea id="jsonEditor" spellcheck="false"></textarea>
+        </section>
+      </section>
+
+      <section id="tab-runlog" class="tab-page">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>运行状态</h2>
+            <span id="jobStatus" class="status">idle</span>
+          </div>
+          <pre id="runLog"></pre>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

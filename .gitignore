@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local OpenFAST runtime and model assets
+bin/*
+!bin/README.md
+FOCAL_OpenFast_C4-main/*
+!FOCAL_OpenFast_C4-main/README.md
+data/*
+!data/README.md
+
+# Generated OpenFAST outputs
+runs/*
+!runs/.gitkeep
+reports/*
+!reports/README.md
+!reports/figures/
+reports/figures/*
+!reports/figures/.gitkeep
+reference_results/
+work_c4/output/
+work_c4_quality_gate/output/
+
+# OpenFAST transient files
+*.out
+*.outb
+*.MD.out
+*.chkp
+*.ech
+*.sum
+*.vtk
+*.log
+ui_server*.log
+
+# Local indexes and OS/editor files
+.codegraph/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

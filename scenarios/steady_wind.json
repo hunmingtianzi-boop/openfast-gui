@@ -1,0 +1,339 @@
+{
+  "name": "steady_wind",
+  "description": "稳态风 + 静水运行工况。",
+  "cases": [
+    {
+      "name": "wind_08ms",
+      "notes": "8 m/s 稳态风，静水。",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 120,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 0
+        }
+      },
+      "hydrodyn_tables": {
+        "target_format": "auto_v4_runtime",
+        "tables": {
+          "axial": [
+            {
+              "AxCoefID": 1,
+              "AxCd": 1,
+              "AxCa": 1,
+              "AxCp": 1,
+              "AxFDMod": 0,
+              "AxVnCOff": 0,
+              "AxFDLoFSc": 1
+            }
+          ],
+          "joints": [
+            {
+              "JointID": 1,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": 0,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 2,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": 35.25,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 3,
+              "Jointxi": 51.67,
+              "Jointyi": 0,
+              "Jointzi": 0,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 4,
+              "Jointxi": 51.67,
+              "Jointyi": 0,
+              "Jointzi": 34.88,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 5,
+              "Jointxi": -25.835,
+              "Jointyi": 44.478,
+              "Jointzi": 0,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 6,
+              "Jointxi": -23.835,
+              "Jointyi": 44.478,
+              "Jointzi": 34.88,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 7,
+              "Jointxi": -23.835,
+              "Jointyi": -44.478,
+              "Jointzi": 0,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 8,
+              "Jointxi": -25.835,
+              "Jointyi": -44.478,
+              "Jointzi": 34.88,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            }
+          ],
+          "prop_sets_cyl": [
+            {
+              "PropSetID": 1,
+              "PropD": 9.85,
+              "PropThck": 0.05
+            },
+            {
+              "PropSetID": 2,
+              "PropD": 12.23,
+              "PropThck": 0.05
+            },
+            {
+              "PropSetID": 3,
+              "PropD": 12.23,
+              "PropThck": 0.05
+            },
+            {
+              "PropSetID": 4,
+              "PropD": 12.23,
+              "PropThck": 0.05
+            }
+          ],
+          "prop_sets_rec": [],
+          "simple_cyl": {
+            "SimplCd": 0,
+            "SimplCdMG": 0,
+            "SimplCa": 0,
+            "SimplCaMG": 0,
+            "SimplCp": 0,
+            "SimplCpMG": 0,
+            "SimplAxCd": 0,
+            "SimplAxCdMG": 0,
+            "SimplAxCa": 0,
+            "SimplAxCaMG": 0,
+            "SimplAxCp": 0,
+            "SimplAxCpMG": 0,
+            "SimplCb": 1,
+            "SimplCbMG": 1
+          },
+          "simple_rec": {},
+          "depth_cyl": [],
+          "depth_rec": [],
+          "member_coeffs_cyl": [
+            {
+              "MemberID": 1,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1
+            },
+            {
+              "MemberID": 2,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1
+            },
+            {
+              "MemberID": 3,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1
+            },
+            {
+              "MemberID": 4,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1
+            }
+          ],
+          "member_coeffs_rec": [],
+          "members": [
+            {
+              "MemberID": 1,
+              "MJointID1": 1,
+              "MJointID2": 2,
+              "MPropSetID1": 1,
+              "MPropSetID2": 1,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            },
+            {
+              "MemberID": 2,
+              "MJointID1": 3,
+              "MJointID2": 4,
+              "MPropSetID1": 2,
+              "MPropSetID2": 2,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            },
+            {
+              "MemberID": 3,
+              "MJointID1": 5,
+              "MJointID2": 6,
+              "MPropSetID1": 3,
+              "MPropSetID2": 3,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            },
+            {
+              "MemberID": 4,
+              "MJointID1": 7,
+              "MJointID2": 8,
+              "MPropSetID1": 4,
+              "MPropSetID2": 4,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "wind_12p8ms",
+      "notes": "模板默认 12.8 m/s 稳态风，静水。",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 120,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 12.8
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 0
+        }
+      }
+    }
+  ]
+}

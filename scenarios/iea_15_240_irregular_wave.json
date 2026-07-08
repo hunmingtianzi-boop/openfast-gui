@@ -5,7 +5,7 @@
   "runtime_id": "openfast_2026_dev",
   "cases": [
     {
-      "name": "iea_wind12p8_irregular_Hs3p1_Tp8p96",
+      "name": "iea_wind8_irregular_Hs3p1_Tp8p96",
       "fst": "IEA-15-240-RWT-UMaineSemi.fst",
       "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
       "set": {
@@ -16,11 +16,11 @@
           "CompServo": 1,
           "CompSeaSt": 1,
           "CompHydro": 1,
-          "CompMooring": 0
+          "CompMooring": 3
         },
         "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
           "WindType": 1,
-          "HWindSpeed": 12.8
+          "HWindSpeed": 8
         },
         "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
           "WaveMod": 2,
@@ -36,7 +36,7 @@
         }
       },
       "matrix_edits": [],
-      "notes": "Operating case: 12.8 m/s steady wind plus irregular waves.",
+      "notes": "Moderate operating case: 8 m/s steady wind plus irregular waves, with MoorDyn enabled. The original 12.8 m/s startup is intentionally not used here because this local model/controller combination tower-strikes without a matched steady-state initial condition.",
       "timeout": 7200
     },
     {
@@ -51,7 +51,7 @@
           "CompServo": 0,
           "CompSeaSt": 1,
           "CompHydro": 1,
-          "CompMooring": 0
+          "CompMooring": 3
         },
         "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
           "WaveMod": 2,

@@ -1,0 +1,74 @@
+{
+  "name": "iea_15_240_irregular_wave",
+  "description": "IEA-15-240-RWT UMaineSemi irregular-wave cases using the local OpenFAST 2026/v5 runtime.",
+  "model_id": "iea_15_240_umaine",
+  "runtime_id": "openfast_2026_dev",
+  "cases": [
+    {
+      "name": "iea_wind12p8_irregular_Hs3p1_Tp8p96",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 0
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 12.8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 3.1,
+          "WaveTp": 8.96,
+          "WavePkShp": "DEFAULT",
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580799
+        }
+      },
+      "matrix_edits": [],
+      "notes": "Operating case: 12.8 m/s steady wind plus irregular waves.",
+      "timeout": 7200
+    },
+    {
+      "name": "iea_parked_irregular_Hs8p1_Tp12p8",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 0,
+          "CompAero": 0,
+          "CompServo": 0,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 0
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 8.1,
+          "WaveTp": 12.8,
+          "WavePkShp": "DEFAULT",
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580799
+        }
+      },
+      "matrix_edits": [],
+      "notes": "Parked/wave-only extreme irregular-wave case. InflowWind/AeroDyn/ServoDyn are disabled to avoid zero-wind steady inflow validation.",
+      "timeout": 7200
+    }
+  ]
+}

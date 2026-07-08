@@ -63,6 +63,13 @@ $env:FOCAL_C4_MODEL_TEMPLATE = "D:\path\to\FOCAL_OpenFast_C4-main"
 http://127.0.0.1:8765
 ```
 
+页面顶部可以选择模型模板和 OpenFAST runtime。当前配置包含：
+
+- `FOCAL C4 semi-submersible` + `OpenFAST v4.0.0 bundled`
+- `IEA-15-240-RWT UMaineSemi` + `OpenFAST 2026 dev build`
+
+模型和 runtime 来自 [config/model_profiles.json](D:/OpenFast/openfast-gui/config/model_profiles.json)。换电脑或换安装路径时，可以复制一份本地覆盖配置到 `config/local_model_profiles.json`；该文件被 `.gitignore` 忽略，不会上传。
+
 如果 8765 端口被占用：
 
 ```powershell
@@ -87,6 +94,20 @@ python .\user_tools\run_scenario.py --list-scenarios
 
 ```powershell
 .\scripts\06_run_scenario_file.ps1 -Scenario .\scenarios\steady_wind.json -Overwrite -ContinueOnFail
+```
+
+命令行指定 IEA-15-240 模型并只生成输入：
+
+```powershell
+.\scripts\06_run_scenario_file.ps1 `
+  -Scenario .\scenarios\iea_15_240_steady_wind.json `
+  -Model "D:\OpenFast\focal 4 自做\free_decay_harness_template\02_starting_model\openfast2026_reproducible_model\OpenFAST_input_files" `
+  -OpenFastExe "D:\OpenFast\focal 4 自做\free_decay_harness_template\02_starting_model\openfast2026_reproducible_model\OpenFAST_input_files\OpenFAST_Release.exe" `
+  -RuntimeFormat v5 `
+  -Compatibility none `
+  -Fst IEA-15-240-RWT-UMaineSemi.fst `
+  -GenerateOnly `
+  -Overwrite
 ```
 
 手动覆盖常用参数：

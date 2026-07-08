@@ -160,6 +160,25 @@ h2 {
   line-height: 1.45;
 }
 
+.profile-strip {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr) minmax(280px, 1.4fr);
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.profile-status {
+  align-self: end;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .strip {
   display: grid;
   grid-template-columns: 220px 240px minmax(0, 1fr);
@@ -581,7 +600,7 @@ input:focus, select:focus, textarea:focus {
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { order: 2; }
-  .grid-2, .strip { grid-template-columns: 1fr; }
+  .grid-2, .strip, .profile-strip { grid-template-columns: 1fr; }
   .catalog { grid-template-columns: 1fr; }
   .switch-grid, .preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

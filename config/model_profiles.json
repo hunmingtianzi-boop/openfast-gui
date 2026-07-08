@@ -1,0 +1,70 @@
+{
+  "models": [
+    {
+      "id": "focal_c4",
+      "name": "FOCAL C4 semi-submersible",
+      "description": "FOCAL Campaign 4 model, current calibrated v4 workflow.",
+      "path": "${ROOT}/FOCAL_OpenFast_C4-main/FOCAL_OpenFast_C4-main",
+      "fst": "FOCAL_C4.fst",
+      "hydroFile": "FOCAL_C4_HydroDyn.dat",
+      "inflowFile": "FOCAL_C4_InflowFile.dat",
+      "seaStateFile": "SeaState_DLC_1p6.dat",
+      "seaStateCompKey": "CompSeaState",
+      "defaultMooring": 3,
+      "compatibility": "focal_c4_v4",
+      "preferredRuntime": "openfast_v4",
+      "inputFiles": [
+        "FOCAL_C4.fst",
+        "FOCAL_C4_ElastoDyn.dat",
+        "FOCAL_C4_InflowFile.dat",
+        "FOCAL_C4_AeroDyn15_aboverated.dat",
+        "FOCAL_C4_AeroDyn15_rated.dat",
+        "FOCAL_C4_ServoDyn_aboverated_controller.dat",
+        "FOCAL_C4_ServoDyn_rated_controller.dat",
+        "SeaState_DLC_1p6.dat",
+        "FOCAL_C4_HydroDyn.dat",
+        "FOCAL_C4_MoorDyn.dat"
+      ]
+    },
+    {
+      "id": "iea_15_240_umaine",
+      "name": "IEA-15-240-RWT UMaineSemi",
+      "description": "IEA 15 MW offshore reference turbine on UMaine VolturnUS-S semi-submersible platform.",
+      "path": "D:/OpenFast/focal 4 自做/free_decay_harness_template/02_starting_model/openfast2026_reproducible_model/OpenFAST_input_files",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydroFile": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "inflowFile": "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat",
+      "seaStateFile": "IEA-15-240-RWT-UMaineSemi_SeaState.dat",
+      "seaStateCompKey": "CompSeaSt",
+      "defaultMooring": 0,
+      "compatibility": "none",
+      "preferredRuntime": "openfast_2026_dev",
+      "inputFiles": [
+        "IEA-15-240-RWT-UMaineSemi.fst",
+        "IEA-15-240-RWT-UMaineSemi_ElastoDyn.dat",
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat",
+        "IEA-15-240-RWT-UMaineSemi_AeroDyn15.dat",
+        "IEA-15-240-RWT-UMaineSemi_ServoDyn.dat",
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat",
+        "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+        "IEA-15-240-RWT-UMaineSemi_MoorDyn.dat"
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "id": "openfast_v4",
+      "name": "OpenFAST v4.0.0 bundled",
+      "path": "${ROOT}/bin/openfast_x64.exe",
+      "runtimeFormat": "v4",
+      "description": "Bundled OpenFAST v4 runtime used by the FOCAL C4 compatibility workflow."
+    },
+    {
+      "id": "openfast_2026_dev",
+      "name": "OpenFAST 2026 dev build",
+      "path": "D:/OpenFast/focal 4 自做/free_decay_harness_template/02_starting_model/openfast2026_reproducible_model/OpenFAST_input_files/OpenFAST_Release.exe",
+      "runtimeFormat": "v5",
+      "description": "Local OpenFAST_Release.exe bundled with the IEA-15-240 reproducible model. The executable reports OpenFAST-Unversioned from commit 2895884."
+    }
+  ]
+}

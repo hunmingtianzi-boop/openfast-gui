@@ -3,6 +3,8 @@ const state = {
   scenarioFile: 'ui_scenario.json',
   scenario: { name: 'ui_scenario', description: 'Created from visual UI', cases: [] },
   selectedCase: 0,
+  selectedModelId: localStorage.getItem('openfastGui.modelId') || '',
+  selectedRuntimeId: localStorage.getItem('openfastGui.runtimeId') || '',
   currentJob: null,
   pollTimer: null,
   jobRunning: false
@@ -32,6 +34,21 @@ const HYDRO_TABLE_TITLES = {
   member_coeffs_cyl: '成员独立 Cd/Ca/Cp'
 };
 
+function activeFiles() {
+  const profile = state.meta?.modelProfile || {};
+  return {
+    fst: profile.fst || 'FOCAL_C4.fst',
+    inflow: profile.inflowFile || 'FOCAL_C4_InflowFile.dat',
+    sea: profile.seaStateFile || 'SeaState_DLC_1p6.dat',
+    seaStateCompKey: profile.seaStateCompKey || 'CompSeaState',
+    defaultMooring: Number(profile.defaultMooring ?? 3)
+  };
+}
+
+function targetFormatForRuntime() {
+  return state.meta?.hydroTables?.runtimeFormat === 'v5' ? 'v5' : 'auto_v4_runtime';
+}
+
 function toast(message) {
   const el = $('toast');
   el.textContent = message;
@@ -50,19 +67,20 @@ async function api(path, options = {}) {
 }
 
 function emptyCase() {
+  const files = activeFiles();
   return {
     name: `case_${String(state.scenario.cases.length + 1).padStart(2, '0')}`,
     notes: '',
     set: {
-      'FOCAL_C4.fst': {
+      [files.fst]: {
         TMax: 120,
         CompElast: 1,
         CompInflow: 1,
         CompAero: 2,
         CompServo: 1,
-        CompSeaState: 1,
+        [files.seaStateCompKey]: 1,
         CompHydro: 1,
-        CompMooring: 3
+        CompMooring: files.defaultMooring
       }
     },
     matrix_edits: []
@@ -98,6 +116,7 @@ function removeDeep(file, key) {
 function renderAll() {
   normalizeScenario();
   $('workspacePath').textContent = state.meta?.root || '';
+  renderProfileControls();
   $('scenarioFile').value = state.scenarioFile;
   $('scenarioName').value = state.scenario.name || '';
   $('scenarioDescription').value = state.scenario.description || '';
@@ -111,6 +130,40 @@ function renderAll() {
   renderHydroTables();
   renderCatalog();
   renderJson();
+}
+
+function renderProfileControls() {
+  const modelSelect = $('modelSelect');
+  const runtimeSelect = $('runtimeSelect');
+  if (!modelSelect || !runtimeSelect || !state.meta) return;
+  state.selectedModelId = state.meta.selectedModelId || state.selectedModelId;
+  state.selectedRuntimeId = state.meta.selectedRuntimeId || state.selectedRuntimeId;
+
+  modelSelect.innerHTML = '';
+  for (const model of state.meta.modelProfiles || []) {
+    const option = document.createElement('option');
+    option.value = model.id;
+    option.textContent = `${model.exists && model.fstExists ? 'OK' : 'MISSING'} ${model.name}`;
+    modelSelect.appendChild(option);
+  }
+  modelSelect.value = state.selectedModelId;
+
+  runtimeSelect.innerHTML = '';
+  for (const runtime of state.meta.runtimeProfiles || []) {
+    const option = document.createElement('option');
+    option.value = runtime.id;
+    option.textContent = `${runtime.exists ? 'OK' : 'MISSING'} ${runtime.name}`;
+    runtimeSelect.appendChild(option);
+  }
+  runtimeSelect.value = state.selectedRuntimeId;
+
+  const model = state.meta.modelProfile || {};
+  const runtime = state.meta.runtimeProfile || {};
+  $('profileStatus').textContent = [
+    `model: ${model.fst || ''}`,
+    `runtime: ${runtime.version || runtime.runtimeFormat || ''}`,
+    `hydro: ${model.hydroFile || ''}`
+  ].join('\n');
 }
 
 function renderPresets() {
@@ -184,19 +237,20 @@ function renderCases() {
 
 function renderModuleSwitches() {
   const wrap = $('moduleSwitches');
+  const files = activeFiles();
   const keys = [
     ['CompElast', 'Structure', [1, 2, 3]],
     ['CompInflow', 'InflowWind', [0, 1, 2]],
     ['CompAero', 'Aero', [0, 1, 2, 3]],
     ['CompServo', 'Servo', [0, 1]],
-    ['CompSeaState', 'SeaState', [0, 1]],
+    [files.seaStateCompKey, 'SeaState', [0, 1]],
     ['CompHydro', 'Hydro', [0, 1]],
     ['CompSub', 'SubDyn', [0, 1]],
     ['CompMooring', 'Mooring', [0, 1, 2, 3, 4]],
     ['CompIce', 'Ice', [0, 1, 2]],
     ['MHK', 'MHK', [0, 1, 2]]
   ];
-  const fst = currentCase().set?.['FOCAL_C4.fst'] || {};
+  const fst = currentCase().set?.[files.fst] || {};
   wrap.innerHTML = '';
   for (const [key, label, values] of keys) {
     const div = document.createElement('div');
@@ -214,8 +268,8 @@ function renderModuleSwitches() {
     }
     select.value = fst[key] ?? '';
     select.onchange = () => {
-      if (select.value === '') removeDeep('FOCAL_C4.fst', key);
-      else setDeep('FOCAL_C4.fst', key, Number(select.value));
+      if (select.value === '') removeDeep(files.fst, key);
+      else setDeep(files.fst, key, Number(select.value));
       renderJson();
     };
     div.innerHTML = `<label>${label}</label><small>${key}</small>`;
@@ -322,7 +376,7 @@ function cloneData(value) {
 function baseHydroPayload() {
   const meta = state.meta?.hydroTables || {};
   return {
-    target_format: 'auto_v4_runtime',
+    target_format: targetFormatForRuntime(),
     tables: cloneData(meta.tables || {}),
     schemas: cloneData(meta.schemas || {}),
     format: meta.format || 'legacy_v4',
@@ -334,9 +388,11 @@ function ensureCaseHydroTables() {
   const c = currentCase();
   if (!c.hydrodyn_tables || !c.hydrodyn_tables.tables) {
     const base = baseHydroPayload();
-    c.hydrodyn_tables = { target_format: 'auto_v4_runtime', tables: base.tables };
+    c.hydrodyn_tables = { target_format: base.target_format, tables: base.tables };
   }
-  if (!c.hydrodyn_tables.target_format) c.hydrodyn_tables.target_format = 'auto_v4_runtime';
+  if (!c.hydrodyn_tables.target_format || (c.hydrodyn_tables.target_format === 'auto_v4_runtime' && targetFormatForRuntime() === 'v5')) {
+    c.hydrodyn_tables.target_format = targetFormatForRuntime();
+  }
   return c.hydrodyn_tables;
 }
 
@@ -839,6 +895,8 @@ function collectForm() {
   state.scenarioFile = $('scenarioFile').value.trim() || 'ui_scenario.json';
   state.scenario.name = $('scenarioName').value.trim() || 'ui_scenario';
   state.scenario.description = $('scenarioDescription').value.trim();
+  state.scenario.model_id = state.selectedModelId || state.meta?.selectedModelId;
+  state.scenario.runtime_id = state.selectedRuntimeId || state.meta?.selectedRuntimeId;
   const c = currentCase();
   c.name = $('caseName').value.trim() || c.name;
   c.notes = $('caseNotes').value.trim();
@@ -855,7 +913,15 @@ function cleanupScenarioForSave(data) {
 }
 
 async function loadMeta() {
-  state.meta = await api('/api/meta');
+  const params = new URLSearchParams();
+  if (state.selectedModelId) params.set('model', state.selectedModelId);
+  if (state.selectedRuntimeId) params.set('runtime', state.selectedRuntimeId);
+  const suffix = params.toString() ? `?${params}` : '';
+  state.meta = await api(`/api/meta${suffix}`);
+  state.selectedModelId = state.meta.selectedModelId || '';
+  state.selectedRuntimeId = state.meta.selectedRuntimeId || '';
+  localStorage.setItem('openfastGui.modelId', state.selectedModelId);
+  localStorage.setItem('openfastGui.runtimeId', state.selectedRuntimeId);
   const list = await api('/api/scenarios');
   state.scenarioList = list.scenarios;
 }
@@ -864,6 +930,9 @@ async function loadScenario(file) {
   const data = await api(`/api/scenario?file=${encodeURIComponent(file)}`);
   state.scenarioFile = data.file;
   state.scenario = data.data;
+  if (state.scenario.model_id) state.selectedModelId = state.scenario.model_id;
+  if (state.scenario.runtime_id) state.selectedRuntimeId = state.scenario.runtime_id;
+  await loadMeta();
   state.selectedCase = 0;
   renderAll();
   toast(`已载入 ${file}`);
@@ -901,7 +970,9 @@ async function startJob(generateOnly) {
       options: {
         generateOnly,
         overwrite: $('overwriteRun').checked,
-        continueOnFail: $('continueOnFail').checked
+        continueOnFail: $('continueOnFail').checked,
+        modelId: state.selectedModelId,
+        runtimeId: state.selectedRuntimeId
       }
     })
   });
@@ -937,17 +1008,18 @@ async function pollJob() {
 function applyPreset() {
   const preset = state.meta.modulePresets.find(p => p.id === $('presetSelect').value);
   if (!preset) return;
+  const files = activeFiles();
   const c = currentCase();
   c.set = structuredClone(preset.set || {});
-  setDeep('FOCAL_C4.fst', 'TMax', Number($('quickTMax').value || 120));
+  setDeep(files.fst, 'TMax', Number($('quickTMax').value || 120));
   if (preset.id.includes('wind')) {
-    setDeep('FOCAL_C4_InflowFile.dat', 'HWindSpeed', Number($('quickWind').value || 12.8));
+    setDeep(files.inflow, 'HWindSpeed', Number($('quickWind').value || 12.8));
   }
   if (preset.id.includes('wave')) {
-    setDeep('SeaState_DLC_1p6.dat', 'WaveMod', Number($('quickWaveMod').value || 1));
-    setDeep('SeaState_DLC_1p6.dat', 'WaveHs', Number($('quickHs').value || 2));
-    setDeep('SeaState_DLC_1p6.dat', 'WaveTp', Number($('quickTp').value || 10));
-    setDeep('SeaState_DLC_1p6.dat', 'WaveDir', Number($('quickWaveDir').value || 0));
+    setDeep(files.sea, 'WaveMod', Number($('quickWaveMod').value || 1));
+    setDeep(files.sea, 'WaveHs', Number($('quickHs').value || 2));
+    setDeep(files.sea, 'WaveTp', Number($('quickTp').value || 10));
+    setDeep(files.sea, 'WaveDir', Number($('quickWaveDir').value || 0));
   }
   renderAll();
   toast(`已应用 ${preset.name}`);
@@ -960,11 +1032,29 @@ function setActiveTab(name) {
 
 function bindEvents() {
   document.querySelectorAll('.tab').forEach(btn => btn.onclick = () => setActiveTab(btn.dataset.tab));
+  $('modelSelect').onchange = async () => {
+    collectForm();
+    state.selectedModelId = $('modelSelect').value;
+    state.selectedRuntimeId = '';
+    localStorage.setItem('openfastGui.modelId', state.selectedModelId);
+    localStorage.removeItem('openfastGui.runtimeId');
+    await loadMeta();
+    delete currentCase().hydrodyn_tables;
+    renderAll();
+  };
+  $('runtimeSelect').onchange = async () => {
+    collectForm();
+    state.selectedRuntimeId = $('runtimeSelect').value;
+    localStorage.setItem('openfastGui.runtimeId', state.selectedRuntimeId);
+    await loadMeta();
+    delete currentCase().hydrodyn_tables;
+    renderAll();
+  };
   $('presetSelect').onchange = updatePresetDescription;
   $('applyPresetBtn').onclick = applyPreset;
   $('addCaseBtn').onclick = () => { collectForm(); state.scenario.cases.push(emptyCase()); state.selectedCase = state.scenario.cases.length - 1; renderAll(); };
-  $('newScenarioBtn').onclick = () => { state.scenarioFile = 'ui_scenario.json'; state.scenario = { name: 'ui_scenario', description: 'Created from visual UI', cases: [emptyCase()] }; state.selectedCase = 0; renderAll(); };
-  $('addSetBtn').onclick = () => { setDeep('FOCAL_C4.fst', 'TMax', 120); renderAll(); };
+  $('newScenarioBtn').onclick = () => { state.scenarioFile = 'ui_scenario.json'; state.scenario = { name: 'ui_scenario', description: 'Created from visual UI', model_id: state.selectedModelId, runtime_id: state.selectedRuntimeId, cases: [emptyCase()] }; state.selectedCase = 0; renderAll(); };
+  $('addSetBtn').onclick = () => { setDeep(activeFiles().fst, 'TMax', 120); renderAll(); };
   $('addMatrixBtn').onclick = () => { delete currentCase().matrix_edits; renderAll(); toast('已清空矩阵修改'); };
   $('addMorisonBtn').onclick = addDefaultMorisonMember;
   $('resetHydroTablesBtn').onclick = () => { delete currentCase().hydrodyn_tables; renderAll(); toast('已恢复模板 HydroDyn 表格'); };

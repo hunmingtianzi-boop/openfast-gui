@@ -1,0 +1,34 @@
+{
+  "name": "iea_15_240_steady_wind",
+  "description": "IEA-15-240-RWT UMaineSemi steady wind + still water generate/run template.",
+  "model_id": "iea_15_240_umaine",
+  "runtime_id": "openfast_2026_dev",
+  "cases": [
+    {
+      "name": "iea_wind_12p8ms",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 120,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 0
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 12.8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 0
+        }
+      },
+      "matrix_edits": [],
+      "notes": "Uses the IEA profile and the local 2026 OpenFAST development executable.",
+      "timeout": 7200
+    }
+  ]
+}

@@ -21,15 +21,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "webui"
 SCENARIOS = ROOT / "scenarios"
 RUNS = ROOT / "runs"
-
-
-def configured_path(env_name: str, default: pathlib.Path) -> pathlib.Path:
-    raw = os.environ.get(env_name)
-    return pathlib.Path(raw) if raw else default
-
-
-MODEL = configured_path("FOCAL_C4_MODEL_TEMPLATE", ROOT / "FOCAL_OpenFast_C4-main" / "FOCAL_OpenFast_C4-main")
-OPENFAST_EXE = configured_path("OPENFAST_EXE", ROOT / "bin" / "openfast_x64.exe")
 RUN_SCENARIO = ROOT / "user_tools" / "run_scenario.py"
 PYTHON = sys.executable
 WORK_C4 = ROOT / "work_c4"
@@ -38,6 +29,13 @@ if str(WORK_C4) not in sys.path:
 
 from driver_c4 import _ensure_hydrodyn_v4  # noqa: E402
 from hydrodyn_tables import parse_hydrodyn_tables  # noqa: E402
+from model_profiles import (  # noqa: E402
+    input_files_for_model,
+    model_profiles,
+    runtime_profiles,
+    select_model,
+    select_runtime,
+)
 
 INPUT_FILES = [
     "FOCAL_C4.fst",
@@ -169,10 +167,102 @@ def scenario_path(name: str) -> pathlib.Path:
     return SCENARIOS / name
 
 
-def parse_template_keys() -> dict[str, list[dict]]:
+def model_path(model: dict) -> pathlib.Path:
+    return pathlib.Path(model["path"])
+
+
+def active_context(qs: dict[str, list[str]] | None = None, options: dict | None = None) -> tuple[dict, dict]:
+    qs = qs or {}
+    options = options or {}
+    model_id = options.get("modelId") or (qs.get("model") or [None])[0]
+    runtime_id = options.get("runtimeId") or (qs.get("runtime") or [None])[0]
+    model = select_model(model_id)
+    runtime = select_runtime(runtime_id, model=model)
+    return model, runtime
+
+
+def module_presets_for(model: dict) -> list[dict]:
+    fst = model.get("fst") or "FOCAL_C4.fst"
+    inflow = model.get("inflowFile") or "FOCAL_C4_InflowFile.dat"
+    sea = model.get("seaStateFile") or "SeaState_DLC_1p6.dat"
+    sea_key = model.get("seaStateCompKey") or "CompSeaState"
+    mooring = int(model.get("defaultMooring", 0))
+    return [
+        {
+            "id": "parked_still",
+            "name": "停机静水",
+            "description": "无风、无气动、无控制；保留 SeaState/HydroDyn/Mooring，WaveMod=0。",
+            "set": {
+                fst: {"CompInflow": 0, "CompAero": 0, "CompServo": 0, sea_key: 1, "CompHydro": 1, "CompMooring": mooring},
+                sea: {"WaveMod": 0},
+            },
+        },
+        {
+            "id": "steady_wind",
+            "name": "稳态风",
+            "description": "开启 InflowWind + AeroDyn + ServoDyn；默认静水。",
+            "set": {
+                fst: {"CompInflow": 1, "CompAero": 2, "CompServo": 1, sea_key: 1, "CompHydro": 1, "CompMooring": mooring},
+                inflow: {"WindType": 1, "HWindSpeed": 12.8},
+                sea: {"WaveMod": 0},
+            },
+        },
+        {
+            "id": "regular_wave_parked",
+            "name": "停机规则波",
+            "description": "无风/无气动/无控制，规则波水动力工况。",
+            "set": {
+                fst: {"CompInflow": 0, "CompAero": 0, "CompServo": 0, sea_key: 1, "CompHydro": 1, "CompMooring": mooring},
+                sea: {"WaveMod": 1, "WaveHs": 2.0, "WaveTp": 10.0, "WaveDir": 0},
+            },
+        },
+        {
+            "id": "wind_wave",
+            "name": "风 + 规则波",
+            "description": "运行状态下同时施加稳态风和规则波。",
+            "set": {
+                fst: {"CompInflow": 1, "CompAero": 2, "CompServo": 1, sea_key: 1, "CompHydro": 1, "CompMooring": mooring},
+                inflow: {"WindType": 1, "HWindSpeed": 12.8},
+                sea: {"WaveMod": 1, "WaveHs": 2.0, "WaveTp": 10.0, "WaveDir": 0},
+            },
+        },
+        {
+            "id": "linearization",
+            "name": "线性化设置",
+            "description": "在复制出的 case 中打开 OpenFAST 线性化相关字段。",
+            "set": {
+                fst: {"Linearize": True, "CalcSteady": False, "NLinTimes": 2, "LinTimes": "30.0, 60.0", "LinInputs": 1, "LinOutputs": 1},
+            },
+        },
+        {
+            "id": "vtk_output",
+            "name": "VTK 可视化输出",
+            "description": "打开 VTK 输出，用于快速检查几何和运动。",
+            "set": {
+                fst: {"WrVTK": 2, "VTK_type": 2, "VTK_fields": False, "VTK_fps": 15.0},
+            },
+        },
+    ]
+
+
+def interface_modes_for(model: dict, runtime: dict) -> list[dict]:
+    fst = model.get("fst") or "Input.fst"
+    exe = pathlib.Path(runtime.get("path") or "openfast").name
+    return [
+        {"name": "OpenFAST 耦合 .fst", "status": "supported", "entry": f"{exe} {fst}", "scope": "按当前模型 profile 复制模板并运行"},
+        {"name": "JSON 场景批量", "status": "supported", "entry": "user_tools/run_scenario.py", "scope": "复制完整模型后按参数覆盖运行一个或多个 case"},
+        {"name": "线性化", "status": "template-supported", "entry": f"{fst} Linearize=True", "scope": "受所选模块限制的 OpenFAST 全系统线性化"},
+        {"name": "VTK 可视化", "status": "template-supported", "entry": f"{fst} WrVTK", "scope": "OpenFAST 几何/运动可视化输出"},
+        {"name": "模块独立 driver", "status": "documented-only", "entry": "AeroDyn / HydroDyn / SeaState / BeamDyn drivers", "scope": "当前 GUI 主要面向 OpenFAST 主耦合入口"},
+        {"name": "FAST.Farm", "status": "documented-only", "entry": "FAST.Farm primary input", "scope": "风场级仿真接口，当前未打包"},
+    ]
+
+
+def parse_template_keys(model: dict) -> dict[str, list[dict]]:
     result: dict[str, list[dict]] = {}
-    for file_name in INPUT_FILES:
-        path = MODEL / file_name
+    base = model_path(model)
+    for file_name in input_files_for_model(model):
+        path = base / file_name
         if not path.is_file():
             continue
         rows = []
@@ -191,8 +281,8 @@ def parse_template_keys() -> dict[str, list[dict]]:
     return result
 
 
-def parse_hydrodyn_matrices() -> dict[str, list[list[float]]]:
-    path = MODEL / "FOCAL_C4_HydroDyn.dat"
+def parse_hydrodyn_matrices(model: dict) -> dict[str, list[list[float]]]:
+    path = model_path(model) / (model.get("hydroFile") or "")
     matrices: dict[str, list[list[float]]] = {}
     if not path.is_file():
         return matrices
@@ -220,13 +310,16 @@ def parse_hydrodyn_matrices() -> dict[str, list[list[float]]]:
     return matrices
 
 
-def parse_hydrodyn_tables_meta() -> dict:
-    path = MODEL / "FOCAL_C4_HydroDyn.dat"
+def parse_hydrodyn_tables_meta(model: dict, runtime: dict) -> dict:
+    hydro_file = model.get("hydroFile") or "HydroDyn.dat"
+    path = model_path(model) / hydro_file
+    runtime_format = runtime.get("runtimeFormat") or "v4"
     if not path.is_file():
-        return {"format": "missing", "runtimeFormat": "v4", "tables": {}, "schemas": {}, "warnings": ["FOCAL_C4_HydroDyn.dat not found"]}
+        return {"format": "missing", "runtimeFormat": runtime_format, "tables": {}, "schemas": {}, "warnings": [f"{hydro_file} not found"]}
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    lines = _ensure_hydrodyn_v4(lines)
-    return parse_hydrodyn_tables(lines, runtime_format="v4")
+    if model.get("compatibility") == "focal_c4_v4" and runtime_format == "v4":
+        lines = _ensure_hydrodyn_v4(lines)
+    return parse_hydrodyn_tables(lines, runtime_format=runtime_format)
 
 
 def scenario_list() -> list[dict]:
@@ -242,7 +335,23 @@ def scenario_list() -> list[dict]:
 
 
 def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
-    command = [PYTHON, str(RUN_SCENARIO), "--scenario", str(scenario_file)]
+    model, runtime = active_context(options=options)
+    command = [
+        PYTHON,
+        str(RUN_SCENARIO),
+        "--scenario",
+        str(scenario_file),
+        "--model",
+        model["path"],
+        "--openfast-exe",
+        runtime["path"],
+        "--runtime-format",
+        runtime.get("runtimeFormat") or "v4",
+        "--compatibility",
+        model.get("compatibility") or "none",
+        "--fst",
+        model.get("fst") or "FOCAL_C4.fst",
+    ]
     if options.get("generateOnly"):
         command.append("--generate-only")
     if options.get("overwrite"):
@@ -251,7 +360,15 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
         command.append("--continue-on-fail")
 
     with JOBS_LOCK:
-        JOBS[job_id].update({"status": "running", "command": command, "startedAt": time.time()})
+        JOBS[job_id].update(
+            {
+                "status": "running",
+                "command": command,
+                "modelId": model.get("id"),
+                "runtimeId": runtime.get("id"),
+                "startedAt": time.time(),
+            }
+        )
 
     proc = subprocess.Popen(
         command,
@@ -311,18 +428,25 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         try:
             if path == "/api/meta":
+                model, runtime = active_context(qs=qs)
                 return self.send_json(
                     {
                         "root": str(ROOT),
-                        "model": str(MODEL),
-                        "openfastExe": str(OPENFAST_EXE),
-                        "openfastExists": OPENFAST_EXE.is_file(),
+                        "model": model["path"],
+                        "modelProfile": model,
+                        "modelProfiles": model_profiles(),
+                        "selectedModelId": model.get("id"),
+                        "openfastExe": runtime["path"],
+                        "runtimeProfile": runtime,
+                        "runtimeProfiles": runtime_profiles(include_version=True),
+                        "selectedRuntimeId": runtime.get("id"),
+                        "openfastExists": bool(runtime.get("exists")),
                         "runScenario": str(RUN_SCENARIO),
-                        "templateKeys": parse_template_keys(),
-                        "hydroMatrices": parse_hydrodyn_matrices(),
-                        "hydroTables": parse_hydrodyn_tables_meta(),
-                        "modulePresets": MODULE_PRESETS,
-                        "interfaceModes": INTERFACE_MODES,
+                        "templateKeys": parse_template_keys(model),
+                        "hydroMatrices": parse_hydrodyn_matrices(model),
+                        "hydroTables": parse_hydrodyn_tables_meta(model, runtime),
+                        "modulePresets": module_presets_for(model),
+                        "interfaceModes": interface_modes_for(model, runtime),
                         "docLinks": DOC_LINKS,
                     }
                 )

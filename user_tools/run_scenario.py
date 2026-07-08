@@ -177,6 +177,7 @@ def apply_hydrodyn_tables_to_file(
     run_dir: pathlib.Path,
     case: dict[str, Any],
     sets: dict[str, dict[str, Any]],
+    runtime_format: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     payload = case.get("hydrodyn_tables")
     if not isinstance(payload, dict):
@@ -196,12 +197,14 @@ def apply_hydrodyn_tables_to_file(
         )
 
     target_format = str(payload.get("target_format") or "auto_v4_runtime")
+    if target_format == "auto_v4_runtime" and runtime_format == "v5":
+        target_format = "v5"
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     updated, changes, table_warnings = apply_hydrodyn_tables(
         lines,
         payload,
         target_format=target_format,
-        runtime_format="v4",
+        runtime_format=runtime_format,
     )
     path.write_text("\n".join(updated), encoding="utf-8")
     warnings.extend(table_warnings)
@@ -334,17 +337,19 @@ def _ensure_aerodyn_v4(lines: list[str]) -> list[str]:
     return out
 
 
-def copy_model(run_dir: pathlib.Path, overwrite: bool) -> None:
+def copy_model(run_dir: pathlib.Path, overwrite: bool, model_template: pathlib.Path) -> None:
     if run_dir.exists():
         if not overwrite:
             raise FileExistsError(f"Run directory exists: {run_dir}. Use --overwrite or choose another name.")
         shutil.rmtree(run_dir)
-    shutil.copytree(MODEL_TEMPLATE, run_dir)
+    shutil.copytree(model_template, run_dir)
 
 
-def prepare_openfast_v4_inputs(run_dir: pathlib.Path) -> list[dict[str, str]]:
+def prepare_openfast_inputs(run_dir: pathlib.Path, compatibility: str, runtime_format: str) -> list[dict[str, str]]:
     """Apply the same OpenFAST v4 compatibility fixes used by the free-decay workflow."""
     fixes: list[dict[str, str]] = []
+    if compatibility != "focal_c4_v4" or runtime_format != "v4":
+        return fixes
 
     ed_path = run_dir / "FOCAL_C4_ElastoDyn.dat"
     if ed_path.is_file():
@@ -392,10 +397,10 @@ def prepare_openfast_v4_inputs(run_dir: pathlib.Path) -> list[dict[str, str]]:
     return fixes
 
 
-def run_openfast(run_dir: pathlib.Path, fst_name: str, timeout: float) -> dict[str, Any]:
+def run_openfast(run_dir: pathlib.Path, fst_name: str, timeout: float, openfast_exe: pathlib.Path) -> dict[str, Any]:
     t0 = time.time()
     proc = subprocess.Popen(
-        [str(OPENFAST_EXE), fst_name],
+        [str(openfast_exe), fst_name],
         cwd=str(run_dir),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -448,24 +453,33 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
     scenario_dir = out_root / slug(scenario_name)
     run_dir = scenario_dir / case_name
     fst_name = case.get("fst", args.fst)
-    copy_model(run_dir, overwrite=args.overwrite)
-    compatibility_fixes = prepare_openfast_v4_inputs(run_dir)
+    copy_model(run_dir, overwrite=args.overwrite, model_template=args.model_template)
+    compatibility_fixes = prepare_openfast_inputs(run_dir, compatibility=args.compatibility, runtime_format=args.runtime_format)
 
     sets = merge_case_sets(case, args)
     changes = apply_sets(run_dir, sets)
     matrix_changes = apply_matrix_edits_to_file(run_dir, case, args)
-    hydrodyn_table_changes, hydrodyn_table_warnings = apply_hydrodyn_tables_to_file(run_dir, case, sets)
+    hydrodyn_table_changes, hydrodyn_table_warnings = apply_hydrodyn_tables_to_file(
+        run_dir,
+        case,
+        sets,
+        runtime_format=args.runtime_format,
+    )
 
     timeout = float(case.get("timeout", args.timeout))
     execution = {"ok": True, "skipped": True, "reason": "generate_only"}
     if not args.generate_only:
-        execution = run_openfast(run_dir, fst_name=fst_name, timeout=timeout)
+        execution = run_openfast(run_dir, fst_name=fst_name, timeout=timeout, openfast_exe=args.openfast_exe)
 
     summary = {
         "scenario": scenario_name,
         "case": case_name,
         "run_dir": str(run_dir),
         "fst": str(run_dir / fst_name),
+        "model_template": str(args.model_template),
+        "openfast_exe": str(args.openfast_exe),
+        "runtime_format": args.runtime_format,
+        "compatibility": args.compatibility,
         "changes": changes,
         "matrix_changes": matrix_changes,
         "hydrodyn_table_changes": hydrodyn_table_changes,
@@ -510,6 +524,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario-name", default=None)
     parser.add_argument("--name", default=None)
     parser.add_argument("--fst", default="FOCAL_C4.fst")
+    parser.add_argument("--model", default=None, help="Model template directory to copy for each case.")
+    parser.add_argument("--openfast-exe", default=None, help="OpenFAST executable path.")
+    parser.add_argument("--runtime-format", choices=["v4", "v5"], default="v4", help="HydroDyn table/runtime input format.")
+    parser.add_argument("--compatibility", choices=["focal_c4_v4", "none"], default="focal_c4_v4", help="Input compatibility fixes to apply after copying the model.")
     parser.add_argument("--out-root", default=str(DEFAULT_RUNS))
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--generate-only", action="store_true")
@@ -532,13 +550,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    args.model_template = pathlib.Path(args.model) if args.model else MODEL_TEMPLATE
+    args.openfast_exe = pathlib.Path(args.openfast_exe) if args.openfast_exe else OPENFAST_EXE
+    if not args.model_template.is_absolute():
+        args.model_template = ROOT / args.model_template
+    if not args.openfast_exe.is_absolute():
+        args.openfast_exe = ROOT / args.openfast_exe
     if args.list_scenarios:
         return list_scenarios()
-    if not MODEL_TEMPLATE.is_dir():
-        print(f"Model template not found: {MODEL_TEMPLATE}", file=sys.stderr)
+    if not args.model_template.is_dir():
+        print(f"Model template not found: {args.model_template}", file=sys.stderr)
         return 1
-    if not OPENFAST_EXE.is_file() and not args.generate_only:
-        print(f"OpenFAST exe not found: {OPENFAST_EXE}", file=sys.stderr)
+    if not args.openfast_exe.is_file() and not args.generate_only:
+        print(f"OpenFAST exe not found: {args.openfast_exe}", file=sys.stderr)
         return 1
 
     if args.scenario:

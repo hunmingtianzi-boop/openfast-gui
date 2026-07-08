@@ -40,6 +40,9 @@
         }
       },
       "matrix_edits": [],
+      "comparison": {
+        "experiment_id": "operational_E11"
+      },
       "notes": "Compare against operational irregular-wave experiments E11-E15, Hs=3.1 m, Tp=8.96 s.",
       "timeout": 7200
     },
@@ -72,6 +75,9 @@
         }
       },
       "matrix_edits": [],
+      "comparison": {
+        "experiment_id": "extreme_E21"
+      },
       "notes": "Compare against extreme irregular-wave experiments E21-E25, Hs=8.1 m, Tp=12.8 s.",
       "timeout": 7200
     }

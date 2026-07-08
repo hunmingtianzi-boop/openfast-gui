@@ -24,8 +24,10 @@ RUNS = ROOT / "runs"
 RUN_SCENARIO = ROOT / "user_tools" / "run_scenario.py"
 PYTHON = sys.executable
 WORK_C4 = ROOT / "work_c4"
-if str(WORK_C4) not in sys.path:
-    sys.path.insert(0, str(WORK_C4))
+USER_TOOLS = ROOT / "user_tools"
+for import_path in [WORK_C4, USER_TOOLS]:
+    if str(import_path) not in sys.path:
+        sys.path.insert(0, str(import_path))
 
 from driver_c4 import _ensure_hydrodyn_v4  # noqa: E402
 from hydrodyn_tables import parse_hydrodyn_tables  # noqa: E402
@@ -158,6 +160,45 @@ def job_snapshot(job: dict) -> dict:
     if started:
         row["elapsed_s"] = max(0.0, float((finished or time.time()) - started))
     return row
+
+
+def report_path_from_output(output: str) -> pathlib.Path | None:
+    for line in reversed(output.splitlines()):
+        if line.startswith("REPORT:"):
+            raw = line.split(":", 1)[1].strip()
+            if raw:
+                return pathlib.Path(raw)
+    return None
+
+
+def job_results_from_output(output: str) -> tuple[str | None, list]:
+    report = report_path_from_output(output)
+    if not report or not report.is_file():
+        return (str(report) if report else None), []
+    try:
+        data = read_json(report)
+        return str(report), data if isinstance(data, list) else []
+    except Exception:
+        return str(report), []
+
+
+def comparison_figures_from_results(results: list) -> list[dict]:
+    figures = []
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        plot = row.get("comparison_plot") or {}
+        if not isinstance(plot, dict) or not plot.get("web_url"):
+            continue
+        figures.append(
+            {
+                "label": f"{row.get('case', 'case')} 实验/仿真对比",
+                "url": plot["web_url"],
+                "source": plot.get("png") or plot.get("openfast_out") or "",
+                "warnings": plot.get("warnings") or [],
+            }
+        )
+    return figures
 
 
 def scenario_path(name: str) -> pathlib.Path:
@@ -358,6 +399,8 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
         command.append("--overwrite")
     if options.get("continueOnFail"):
         command.append("--continue-on-fail")
+    if options.get("plotComparison"):
+        command.append("--plot-comparison")
 
     with JOBS_LOCK:
         JOBS[job_id].update(
@@ -387,13 +430,19 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
         with JOBS_LOCK:
             JOBS[job_id]["output"] = "".join(output)
     returncode = proc.wait()
+    output_text = "".join(output)
+    result_report, results = job_results_from_output(output_text)
+    comparison_figures = comparison_figures_from_results(results)
     with JOBS_LOCK:
         JOBS[job_id].update(
             {
                 "status": "done" if returncode == 0 else "failed",
                 "returncode": returncode,
                 "finishedAt": time.time(),
-                "output": "".join(output),
+                "output": output_text,
+                "resultReport": result_report,
+                "results": results,
+                "comparisonFigures": comparison_figures,
             }
         )
 

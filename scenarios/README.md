@@ -7,6 +7,8 @@ Scenarios may also include `model_id` and `runtime_id`. The GUI uses those field
 `focal_irregular_wave_compare.json` contains FOCAL C4 irregular-wave cases for the local experiment data in
 `D:\OpenFast\FOCAL_C4_workflow_hub\00_shared_assets\raw_data\focal_c4_organized\04_irregular_wave`.
 The GUI shows `webui/assets/irregular_wave/experiment_overview.png` as a reference figure for comparing simulation results.
+If `运行后出实验对比图` is checked before running, the runner writes per-case comparison PNG/PDF files under
+`runs/<scenario>/<case>/comparison/` and publishes the PNG to the GUI run-log tab.
 Regenerate the figure with:
 
 ```powershell

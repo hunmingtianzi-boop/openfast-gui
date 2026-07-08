@@ -28,8 +28,10 @@ MODEL_TEMPLATE = configured_path("FOCAL_C4_MODEL_TEMPLATE", ROOT / "FOCAL_OpenFa
 OPENFAST_EXE = configured_path("OPENFAST_EXE", ROOT / "bin" / "openfast_x64.exe")
 DEFAULT_RUNS = ROOT / "runs"
 WORK_C4 = ROOT / "work_c4"
-if str(WORK_C4) not in sys.path:
-    sys.path.insert(0, str(WORK_C4))
+USER_TOOLS = ROOT / "user_tools"
+for import_path in [WORK_C4, USER_TOOLS]:
+    if str(import_path) not in sys.path:
+        sys.path.insert(0, str(import_path))
 
 from driver_c4 import (  # noqa: E402
     _ensure_hydrodyn_v4,
@@ -448,6 +450,51 @@ def run_openfast(run_dir: pathlib.Path, fst_name: str, timeout: float, openfast_
     }
 
 
+def run_comparison_plot(
+    case: dict[str, Any],
+    scenario_name: str,
+    case_name: str,
+    run_dir: pathlib.Path,
+    execution: dict[str, Any],
+    args,
+) -> dict[str, Any]:
+    if not getattr(args, "plot_comparison", False):
+        return {"ok": False, "skipped": True, "reason": "disabled"}
+    if getattr(args, "generate_only", False):
+        return {"ok": False, "skipped": True, "reason": "generate_only"}
+    if not execution.get("ok"):
+        return {"ok": False, "skipped": True, "reason": "openfast_failed"}
+
+    out_path = pathlib.Path(str(execution.get("out") or ""))
+    if not out_path.is_file():
+        return {"ok": False, "skipped": True, "reason": f"OpenFAST output not found: {out_path}"}
+
+    try:
+        from plot_irregular_wave_experiment import create_case_comparison
+
+        plot_dir = run_dir / "comparison"
+        local_png = plot_dir / "experiment_comparison.png"
+        local_pdf = plot_dir / "experiment_comparison.pdf"
+        result = create_case_comparison(
+            openfast_out=out_path,
+            case=case,
+            scenario_name=scenario_name,
+            case_name=case_name,
+            out_png=local_png,
+            out_pdf=local_pdf,
+        )
+        web_rel = pathlib.Path("assets") / "run_plots" / slug(scenario_name) / f"{case_name}_comparison.png"
+        web_path = ROOT / "webui" / web_rel
+        web_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(local_png, web_path)
+        result["web_png"] = str(web_path)
+        result["web_url"] = "/" + web_rel.as_posix() + f"?t={int(time.time())}"
+        return result
+    except Exception as exc:
+        print(f"[{case_name}] comparison plot failed: {exc}", file=sys.stderr, flush=True)
+        return {"ok": False, "skipped": False, "error": str(exc)}
+
+
 def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, args) -> dict[str, Any]:
     case_name = slug(case.get("name") or args.name or f"case_{dt.datetime.now():%Y%m%d_%H%M%S}")
     scenario_dir = out_root / slug(scenario_name)
@@ -470,6 +517,7 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
     execution = {"ok": True, "skipped": True, "reason": "generate_only"}
     if not args.generate_only:
         execution = run_openfast(run_dir, fst_name=fst_name, timeout=timeout, openfast_exe=args.openfast_exe)
+    comparison_plot = run_comparison_plot(case, scenario_name, case_name, run_dir, execution, args)
 
     summary = {
         "scenario": scenario_name,
@@ -486,6 +534,7 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
         "hydrodyn_table_warnings": hydrodyn_table_warnings,
         "compatibility_fixes": compatibility_fixes,
         "execution": execution,
+        "comparison_plot": comparison_plot,
         "ok": bool(execution.get("ok")),
         "notes": case.get("notes", ""),
     }
@@ -531,6 +580,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-root", default=str(DEFAULT_RUNS))
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--generate-only", action="store_true")
+    parser.add_argument("--plot-comparison", action="store_true", help="After a successful OpenFAST run, generate experiment-vs-simulation comparison figures when the case has comparison metadata.")
     parser.add_argument("--continue-on-fail", action="store_true")
     parser.add_argument("--timeout", type=float, default=7200.0)
     parser.add_argument("--tmax", type=float, default=None)

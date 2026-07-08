@@ -7,7 +7,8 @@ const state = {
   selectedRuntimeId: localStorage.getItem('openfastGui.runtimeId') || '',
   currentJob: null,
   pollTimer: null,
-  jobRunning: false
+  jobRunning: false,
+  plotComparison: localStorage.getItem('openfastGui.plotComparison')
 };
 
 const $ = (id) => document.getElementById(id);
@@ -125,6 +126,7 @@ function renderAll() {
   renderInterfaces();
   renderDocs();
   renderCases();
+  renderRunOptions();
   renderReferenceFigures();
   renderModuleSwitches();
   renderAdvancedRows();
@@ -156,6 +158,52 @@ function renderReferenceFigures() {
     card.appendChild(caption);
     wrap.appendChild(card);
   }
+}
+
+function scenarioHasComparisonMetadata() {
+  return Boolean(
+    state.scenario.reference_figures?.length ||
+    (state.scenario.cases || []).some(c => c.comparison || c.experiment_id || c.reference_figures?.length)
+  );
+}
+
+function plotComparisonEnabled() {
+  if (state.plotComparison === null) return scenarioHasComparisonMetadata();
+  return state.plotComparison === 'true';
+}
+
+function renderRunOptions() {
+  const plot = $('plotComparison');
+  if (plot) plot.checked = plotComparisonEnabled();
+}
+
+function renderJobFigures(job = {}) {
+  const panel = $('jobFiguresPanel');
+  const wrap = $('jobFigures');
+  if (!panel || !wrap) return;
+  const figures = job.comparisonFigures || [];
+  panel.style.display = figures.length ? '' : 'none';
+  wrap.innerHTML = '';
+  for (const figure of figures) {
+    const card = document.createElement('div');
+    card.className = 'reference-card';
+    const img = document.createElement('img');
+    img.src = figure.url || '';
+    img.alt = figure.label || 'comparison figure';
+    const caption = document.createElement('div');
+    caption.className = 'reference-caption';
+    const warnings = Array.isArray(figure.warnings) && figure.warnings.length ? ` | ${figure.warnings.join('；')}` : '';
+    caption.textContent = `${figure.label || '运行结果图'}${figure.source ? ` | ${figure.source}` : ''}${warnings}`;
+    card.appendChild(img);
+    card.appendChild(caption);
+    wrap.appendChild(card);
+  }
+}
+
+function updatePlotComparisonPreference() {
+  const enabled = Boolean($('plotComparison')?.checked);
+  state.plotComparison = enabled ? 'true' : 'false';
+  localStorage.setItem('openfastGui.plotComparison', state.plotComparison);
 }
 
 function renderProfileControls() {
@@ -997,6 +1045,7 @@ async function startJob(generateOnly) {
         generateOnly,
         overwrite: $('overwriteRun').checked,
         continueOnFail: $('continueOnFail').checked,
+        plotComparison: $('plotComparison').checked && !generateOnly,
         modelId: state.selectedModelId,
         runtimeId: state.selectedRuntimeId
       }
@@ -1004,6 +1053,7 @@ async function startJob(generateOnly) {
   });
   state.currentJob = data.jobId;
   state.jobRunning = true;
+  renderJobFigures({ comparisonFigures: [] });
   setJobButtons(false);
   setActiveTab('runlog');
   pollJob();
@@ -1025,6 +1075,7 @@ async function pollJob() {
     state.pollTimer = setTimeout(pollJob, 1200);
   } else {
     toast(job.status === 'done' ? '任务完成' : '任务失败');
+    renderJobFigures(job);
     state.jobRunning = false;
     setJobButtons(true);
     await loadMeta();
@@ -1089,6 +1140,7 @@ function bindEvents() {
   $('generateBtn').onclick = () => startJob(true).catch(err => toast(err.message));
   $('runBtn').onclick = () => startJob(false).catch(err => toast(err.message));
   $('refreshBtn').onclick = async () => { await loadMeta(); renderAll(); };
+  $('plotComparison').onchange = updatePlotComparisonPreference;
   $('catalogSearch').oninput = renderCatalog;
   $('caseName').onchange = () => { currentCase().name = $('caseName').value.trim(); renderAll(); };
   $('caseNotes').onchange = () => { currentCase().notes = $('caseNotes').value.trim(); renderJson(); };
@@ -1096,6 +1148,7 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  renderJobFigures({ comparisonFigures: [] });
   await loadMeta();
   if (state.scenarioList?.length) {
     const first = state.scenarioList.find(s => s.file === 'steady_wind.json') || state.scenarioList[0];

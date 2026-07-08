@@ -23,6 +23,7 @@ reports/*
 !reports/figures/
 reports/figures/*
 !reports/figures/.gitkeep
+webui/assets/run_plots/
 reference_results/
 work_c4/output/
 work_c4_quality_gate/output/

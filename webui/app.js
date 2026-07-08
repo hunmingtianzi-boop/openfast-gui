@@ -125,11 +125,37 @@ function renderAll() {
   renderInterfaces();
   renderDocs();
   renderCases();
+  renderReferenceFigures();
   renderModuleSwitches();
   renderAdvancedRows();
   renderHydroTables();
   renderCatalog();
   renderJson();
+}
+
+function renderReferenceFigures() {
+  const panel = $('referencePanel');
+  const wrap = $('referenceFigures');
+  if (!panel || !wrap) return;
+  const figures = [
+    ...(state.scenario.reference_figures || []),
+    ...(currentCase().reference_figures || [])
+  ];
+  panel.style.display = figures.length ? '' : 'none';
+  wrap.innerHTML = '';
+  for (const figure of figures) {
+    const card = document.createElement('div');
+    card.className = 'reference-card';
+    const img = document.createElement('img');
+    img.src = figure.url || figure.path || '';
+    img.alt = figure.label || 'reference figure';
+    const caption = document.createElement('div');
+    caption.className = 'reference-caption';
+    caption.textContent = `${figure.label || 'Reference'}${figure.source ? ` | ${figure.source}` : ''}`;
+    card.appendChild(img);
+    card.appendChild(caption);
+    wrap.appendChild(card);
+  }
 }
 
 function renderProfileControls() {

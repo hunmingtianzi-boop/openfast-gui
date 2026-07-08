@@ -179,6 +179,34 @@ h2 {
   word-break: break-word;
 }
 
+.reference-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.reference-card {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+
+.reference-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: white;
+}
+
+.reference-caption {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .strip {
   display: grid;
   grid-template-columns: 220px 240px minmax(0, 1fr);

@@ -4,6 +4,15 @@ Use these JSON files for non-free-decay OpenFAST runs. Each scenario contains a 
 
 Scenarios may also include `model_id` and `runtime_id`. The GUI uses those fields to select the configured model/runtime profile before loading template keys or running cases. `iea_15_240_steady_wind.json` is the starter profile for the local IEA-15-240-RWT UMaineSemi model.
 
+`focal_irregular_wave_compare.json` contains FOCAL C4 irregular-wave cases for the local experiment data in
+`D:\OpenFast\FOCAL_C4_workflow_hub\00_shared_assets\raw_data\focal_c4_organized\04_irregular_wave`.
+The GUI shows `webui/assets/irregular_wave/experiment_overview.png` as a reference figure for comparing simulation results.
+Regenerate the figure with:
+
+```powershell
+python .\user_tools\plot_irregular_wave_experiment.py
+```
+
 Run a scenario:
 
 ```powershell

@@ -1,0 +1,79 @@
+{
+  "name": "focal_irregular_wave_compare",
+  "description": "FOCAL C4 irregular-wave cases with experimental reference figure for comparison.",
+  "model_id": "focal_c4",
+  "runtime_id": "openfast_v4",
+  "reference_figures": [
+    {
+      "label": "FOCAL C4 irregular-wave experiment overview",
+      "url": "/assets/irregular_wave/experiment_overview.png",
+      "source": "D:\\OpenFast\\FOCAL_C4_workflow_hub\\00_shared_assets\\raw_data\\focal_c4_organized\\04_irregular_wave"
+    }
+  ],
+  "cases": [
+    {
+      "name": "operational_Hs3p1_Tp8p96_E11",
+      "fst": "FOCAL_C4.fst",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 9294.4,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 0
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 9294.4,
+          "WaveDT": 0.041833001,
+          "WaveHs": 3.1,
+          "WaveTp": 8.96,
+          "WavePkShp": 1,
+          "WaveDir": 0,
+          "WaveSeed(1)": 11
+        }
+      },
+      "matrix_edits": [],
+      "notes": "Compare against operational irregular-wave experiments E11-E15, Hs=3.1 m, Tp=8.96 s.",
+      "timeout": 7200
+    },
+    {
+      "name": "extreme_Hs8p1_Tp12p8_E21",
+      "fst": "FOCAL_C4.fst",
+      "set": {
+        "FOCAL_C4.fst": {
+          "TMax": 9754.4,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaState": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 0
+        },
+        "SeaState_DLC_1p6.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 9754.4,
+          "WaveDT": 0.041833001,
+          "WaveHs": 8.1,
+          "WaveTp": 12.8,
+          "WavePkShp": 1,
+          "WaveDir": 0,
+          "WaveSeed(1)": 21
+        }
+      },
+      "matrix_edits": [],
+      "notes": "Compare against extreme irregular-wave experiments E21-E25, Hs=8.1 m, Tp=12.8 s.",
+      "timeout": 7200
+    }
+  ]
+}

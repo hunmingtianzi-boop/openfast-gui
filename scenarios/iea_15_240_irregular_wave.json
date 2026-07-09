@@ -5,12 +5,12 @@
   "runtime_id": "openfast_2026_dev",
   "cases": [
     {
-      "name": "iea_wind8_irregular_Hs3p1_Tp8p96",
+      "name": "iea_dlc1p1_wind8_Hs1p32_Tp8p01",
       "fst": "IEA-15-240-RWT-UMaineSemi.fst",
       "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
       "set": {
         "IEA-15-240-RWT-UMaineSemi.fst": {
-          "TMax": 600,
+          "TMax": 6000,
           "CompInflow": 1,
           "CompAero": 2,
           "CompServo": 1,
@@ -26,16 +26,27 @@
           "WaveMod": 2,
           "WaveTMax": 850,
           "WaveDT": 0.25,
-          "WaveHs": 3.1,
-          "WaveTp": 8.96,
-          "WavePkShp": "DEFAULT",
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
           "WvLowCOff": 0.111527,
           "WvHiCOff": 3.2,
           "WaveDir": 0,
           "WaveSeed(1)": -561580799
         }
       },
-      "matrix_edits": [],
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1.0",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
       "notes": "Moderate operating case: 8 m/s steady wind plus irregular waves, with MoorDyn enabled. The original 12.8 m/s startup is intentionally not used here because this local model/controller combination tower-strikes without a matched steady-state initial condition.",
       "timeout": 7200
     },
@@ -66,7 +77,18 @@
           "WaveSeed(1)": -561580799
         }
       },
-      "matrix_edits": [],
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.6-like parked wave-only check: Hs=8.1 m, Tp=12.8 s",
+        "reference": "NREL/TP-5000-76773 Section 4 design checks; this local case is not a full DLC reproduction",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
       "notes": "Parked/wave-only extreme irregular-wave case. InflowWind/AeroDyn/ServoDyn are disabled to avoid zero-wind steady inflow validation.",
       "timeout": 7200
     }

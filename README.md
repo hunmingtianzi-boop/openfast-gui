@@ -101,8 +101,8 @@ python .\user_tools\run_scenario.py --list-scenarios
 ```powershell
 .\scripts\06_run_scenario_file.ps1 `
   -Scenario .\scenarios\iea_15_240_steady_wind.json `
-  -Model "D:\OpenFast\focal 4 自做\free_decay_harness_template\02_starting_model\openfast2026_reproducible_model\OpenFAST_input_files" `
-  -OpenFastExe "D:\OpenFast\focal 4 自做\free_decay_harness_template\02_starting_model\openfast2026_reproducible_model\OpenFAST_input_files\OpenFAST_Release.exe" `
+  -Model "D:\OpenFast\FOCAL_C4_clean_workspace\02_starting_model\best_reproducible_model\OpenFAST_input_files" `
+  -OpenFastExe "D:\OpenFast\FOCAL_C4_clean_workspace\02_starting_model\best_reproducible_model\OpenFAST_input_files\OpenFAST_Release.exe" `
   -RuntimeFormat v5 `
   -Compatibility none `
   -Fst IEA-15-240-RWT-UMaineSemi.fst `

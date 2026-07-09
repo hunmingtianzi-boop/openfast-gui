@@ -1,0 +1,356 @@
+{
+  "name": "iea_dlc1p1_steady_training_U8",
+  "description": "DLC 1.1 learning pack for IEA 15MW UMaineSemi: U=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1, seeds=6.",
+  "model_id": "iea_15_240_umaine",
+  "runtime_id": "openfast_2026_dev",
+  "cases": [
+    {
+      "name": "dlc1p1_steady_U8_seed01",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8,
+          "FileName_BTS": "none"
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580799
+        }
+      },
+      "dlc_metadata": {
+        "dlc_id": "DLC 1.1",
+        "wind_model": "steady_training",
+        "wind_speed": 8,
+        "wave_hs": 1.32,
+        "wave_tp": 8.01,
+        "gamma": 1,
+        "seed_index": 1,
+        "wind_seed": 10101,
+        "wave_seed": -561580799
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "Training case using steady wind with the DLC 1.1 wave condition; useful for learning and quick parameter checks.",
+      "timeout": 7200
+    },
+    {
+      "name": "dlc1p1_steady_U8_seed02",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8,
+          "FileName_BTS": "none"
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580798
+        }
+      },
+      "dlc_metadata": {
+        "dlc_id": "DLC 1.1",
+        "wind_model": "steady_training",
+        "wind_speed": 8,
+        "wave_hs": 1.32,
+        "wave_tp": 8.01,
+        "gamma": 1,
+        "seed_index": 2,
+        "wind_seed": 10102,
+        "wave_seed": -561580798
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "Training case using steady wind with the DLC 1.1 wave condition; useful for learning and quick parameter checks.",
+      "timeout": 7200
+    },
+    {
+      "name": "dlc1p1_steady_U8_seed03",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8,
+          "FileName_BTS": "none"
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580797
+        }
+      },
+      "dlc_metadata": {
+        "dlc_id": "DLC 1.1",
+        "wind_model": "steady_training",
+        "wind_speed": 8,
+        "wave_hs": 1.32,
+        "wave_tp": 8.01,
+        "gamma": 1,
+        "seed_index": 3,
+        "wind_seed": 10103,
+        "wave_seed": -561580797
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "Training case using steady wind with the DLC 1.1 wave condition; useful for learning and quick parameter checks.",
+      "timeout": 7200
+    },
+    {
+      "name": "dlc1p1_steady_U8_seed04",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8,
+          "FileName_BTS": "none"
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580796
+        }
+      },
+      "dlc_metadata": {
+        "dlc_id": "DLC 1.1",
+        "wind_model": "steady_training",
+        "wind_speed": 8,
+        "wave_hs": 1.32,
+        "wave_tp": 8.01,
+        "gamma": 1,
+        "seed_index": 4,
+        "wind_seed": 10104,
+        "wave_seed": -561580796
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "Training case using steady wind with the DLC 1.1 wave condition; useful for learning and quick parameter checks.",
+      "timeout": 7200
+    },
+    {
+      "name": "dlc1p1_steady_U8_seed05",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8,
+          "FileName_BTS": "none"
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580795
+        }
+      },
+      "dlc_metadata": {
+        "dlc_id": "DLC 1.1",
+        "wind_model": "steady_training",
+        "wind_speed": 8,
+        "wave_hs": 1.32,
+        "wave_tp": 8.01,
+        "gamma": 1,
+        "seed_index": 5,
+        "wind_seed": 10105,
+        "wave_seed": -561580795
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "Training case using steady wind with the DLC 1.1 wave condition; useful for learning and quick parameter checks.",
+      "timeout": 7200
+    },
+    {
+      "name": "dlc1p1_steady_U8_seed06",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8,
+          "FileName_BTS": "none"
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580794
+        }
+      },
+      "dlc_metadata": {
+        "dlc_id": "DLC 1.1",
+        "wind_model": "steady_training",
+        "wind_speed": 8,
+        "wave_hs": 1.32,
+        "wave_tp": 8.01,
+        "gamma": 1,
+        "seed_index": 6,
+        "wind_seed": 10106,
+        "wave_seed": -561580794
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "Training case using steady wind with the DLC 1.1 wave condition; useful for learning and quick parameter checks.",
+      "timeout": 7200
+    }
+  ]
+}

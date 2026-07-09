@@ -75,6 +75,7 @@
 
       <div class="tabs">
         <button class="tab active" data-tab="compose">工况配置</button>
+        <button class="tab" data-tab="dlc">DLC 学习</button>
         <button class="tab" data-tab="advanced">高级键值</button>
         <button class="tab" data-tab="hydro">水动力构件</button>
         <button class="tab" data-tab="catalog">参数库</button>
@@ -97,6 +98,7 @@
               <label><span>WaveMod</span><select id="quickWaveMod"><option value="0">0 none</option><option value="1">1 regular</option><option value="2">2 JONSWAP/PM</option><option value="5">5 external elev</option><option value="6">6 external kin</option><option value="7">7 components</option></select></label>
               <label><span>Hs m</span><input id="quickHs" type="number" step="0.1" value="2"></label>
               <label><span>Tp s</span><input id="quickTp" type="number" step="0.1" value="10"></label>
+              <label><span>WavePkShp</span><input id="quickWavePkShp" type="text" value="DEFAULT"></label>
               <label><span>WaveDir deg</span><input id="quickWaveDir" type="number" step="1" value="0"></label>
             </div>
           </section>
@@ -113,7 +115,7 @@
               <div class="switch-row">
                 <label><input id="overwriteRun" type="checkbox" checked> 覆盖同名输出</label>
                 <label><input id="continueOnFail" type="checkbox"> 失败后继续</label>
-                <label><input id="plotComparison" type="checkbox"> 运行后出实验对比图</label>
+                <label><input id="plotComparison" type="checkbox"> 运行后出图</label>
               </div>
             </div>
           </section>
@@ -121,7 +123,7 @@
 
         <section class="panel" id="referencePanel">
           <div class="panel-head">
-            <h2>实验对比图</h2>
+            <h2>参考图</h2>
           </div>
           <div id="referenceFigures" class="reference-figures"></div>
         </section>
@@ -132,6 +134,84 @@
             <span class="hint">写入 FOCAL_C4.fst</span>
           </div>
           <div class="switch-grid" id="moduleSwitches"></div>
+        </section>
+      </section>
+
+      <section id="tab-dlc" class="tab-page">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>DLC 1.1 学习生成器</h2>
+              <p class="hint">按 76773 报告 Table 12 生成 IEA 15MW / UMaineSemi 工况。生成后只改场景 JSON，不自动运行。</p>
+            </div>
+            <button id="dlcGenerateBtn" class="button strong">生成 case</button>
+          </div>
+          <div id="dlcStatus" class="hint"></div>
+          <div class="dlc-controls">
+            <label>
+              <span>风速 URef</span>
+              <select id="dlcWindSpeed"></select>
+            </label>
+            <label>
+              <span>seed 数量</span>
+              <input id="dlcSeedCount" type="number" min="1" max="12" step="1" value="6">
+            </label>
+            <label>
+              <span>风场模式</span>
+              <select id="dlcWindMode">
+                <option value="steady_training">稳态风学习模式 WindType=1</option>
+                <option value="ntm_formal">正式 NTM 模式 WindType=3</option>
+              </select>
+            </label>
+            <label>
+              <span>TMax s</span>
+              <input id="dlcTMax" type="number" min="60" step="10" value="600">
+            </label>
+            <label>
+              <span>Wind seed 起点</span>
+              <input id="dlcWindSeedBase" type="number" step="1" value="10101">
+            </label>
+            <label>
+              <span>WaveSeed(1) 起点</span>
+              <input id="dlcWaveSeedBase" type="number" step="1" value="-561580799">
+            </label>
+            <label class="wide">
+              <span>已有 .bts 路径，可用 {seed}/{wind} 占位</span>
+              <input id="dlcBtsSource" placeholder="例如 D:\winds\dlc1p1_U8_seed{seed}.bts">
+            </label>
+            <label class="check-inline">
+              <input id="dlcPlotMetrics" type="checkbox" checked>
+              <span>运行后出论文指标图</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Table 12: DLC 1.1 NTM 海况</h2>
+            <span class="hint">选择风速后自动带出 Hs / Tp / Gamma。</span>
+          </div>
+          <div class="data-table-wrap">
+            <table class="data-table dlc-table">
+              <thead>
+                <tr>
+                  <th>Wind m/s</th>
+                  <th>Hs m</th>
+                  <th>Tp s</th>
+                  <th>Gamma</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody id="dlcTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>关键参数说明</h2>
+          </div>
+          <div id="dlcParamHelp" class="param-help-grid"></div>
         </section>
       </section>
 

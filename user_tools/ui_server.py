@@ -198,6 +198,10 @@ def comparison_figures_from_results(results: list) -> list[dict]:
                 "warnings": plot.get("warnings") or [],
             }
         )
+        if plot.get("comparison_type") == "paper_metrics":
+            figures[-1]["label"] = plot.get("label") or f"{row.get('case', 'case')} paper metric check"
+        elif plot.get("label"):
+            figures[-1]["label"] = plot["label"]
     return figures
 
 

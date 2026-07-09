@@ -8,7 +8,8 @@ const state = {
   currentJob: null,
   pollTimer: null,
   jobRunning: false,
-  plotComparison: localStorage.getItem('openfastGui.plotComparison')
+  plotComparison: localStorage.getItem('openfastGui.plotComparison'),
+  jsonDirty: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +18,33 @@ const MATRIX_BLOCKS = [
   ['CLin', 'AddCLin 线性刚度'],
   ['BLin', 'AddBLin 线性阻尼'],
   ['BQuad', 'AddBQuad 二次阻尼/拖曳']
+];
+const DLC11_ROWS = [
+  { wind: 4, hs: 1.10, tp: 8.52, gamma: 1.00 },
+  { wind: 6, hs: 1.18, tp: 8.31, gamma: 1.00 },
+  { wind: 8, hs: 1.32, tp: 8.01, gamma: 1.00 },
+  { wind: 10, hs: 1.54, tp: 7.65, gamma: 1.00 },
+  { wind: 12, hs: 1.84, tp: 7.44, gamma: 1.00 },
+  { wind: 14, hs: 2.19, tp: 7.46, gamma: 1.00 },
+  { wind: 16, hs: 2.60, tp: 7.64, gamma: 1.35 },
+  { wind: 18, hs: 3.06, tp: 8.05, gamma: 1.59 },
+  { wind: 20, hs: 3.62, tp: 8.52, gamma: 1.82 },
+  { wind: 22, hs: 4.03, tp: 8.99, gamma: 1.82 },
+  { wind: 24, hs: 4.52, tp: 9.45, gamma: 1.89 }
+];
+const DLC_PARAM_HELP = [
+  ['WindType', 'InflowWind', '1 是稳态风，3 是 TurbSim .bts 全场湍流风。'],
+  ['HWindSpeed', 'InflowWind', '稳态风速；学习模式直接用它控制入流。'],
+  ['FileName_BTS', 'InflowWind', '正式 NTM 模式使用的 .bts 风场文件名。'],
+  ['WaveMod', 'SeaState', '2 表示不规则波 JONSWAP/PM。'],
+  ['WaveHs', 'SeaState', '有效波高 Hs，对应论文 Table 12。'],
+  ['WaveTp', 'SeaState', '谱峰周期 Tp，对应论文 Table 12。'],
+  ['WavePkShp', 'SeaState', 'JONSWAP Gamma；Table 12 中的 Gamma Shape Factor。'],
+  ['WaveSeed(1)', 'SeaState', '波浪随机种子；多 seed 时逐个改变。'],
+  ['TMax', '主 .fst', 'OpenFAST 仿真总时长。'],
+  ['WaveTMax', 'SeaState', '波浪时程长度，应大于 TMax。'],
+  ['CompInflow/Aero/Servo', '主 .fst', '入流、气动和控制模块开关。'],
+  ['CompSeaSt/Hydro/Mooring', '主 .fst', '海况、水动力和系泊模块开关。']
 ];
 const HYDRO_VISIBLE_COLUMNS = {
   axial: ['AxCoefID', 'AxCd', 'AxCa', 'AxCp', 'AxFDMod', 'AxVnCOff', 'AxFDLoFSc'],
@@ -114,6 +142,45 @@ function removeDeep(file, key) {
   }
 }
 
+function setQuickValue(id, value, fallback) {
+  const el = $(id);
+  el.value = value ?? fallback;
+  el.dataset.dirty = '0';
+}
+
+function renderQuickInputs() {
+  const files = activeFiles();
+  const c = currentCase();
+  const fst = c.set?.[files.fst] || {};
+  const inflow = c.set?.[files.inflow] || {};
+  const sea = c.set?.[files.sea] || {};
+  setQuickValue('quickTMax', fst.TMax, 120);
+  setQuickValue('quickWind', inflow.HWindSpeed, 12.8);
+  setQuickValue('quickWaveMod', sea.WaveMod, 0);
+  setQuickValue('quickHs', sea.WaveHs, 2);
+  setQuickValue('quickTp', sea.WaveTp, 10);
+  setQuickValue('quickWavePkShp', sea.WavePkShp, 'DEFAULT');
+  setQuickValue('quickWaveDir', sea.WaveDir, 0);
+}
+
+function syncQuickInputsToCase() {
+  const files = activeFiles();
+  const c = currentCase();
+  const hasInflow = Boolean(c.set?.[files.inflow]);
+  const hasSea = Boolean(c.set?.[files.sea]);
+  const windDirty = $('quickWind').dataset.dirty === '1';
+  const waveDirty = ['quickWaveMod', 'quickHs', 'quickTp', 'quickWavePkShp', 'quickWaveDir'].some(id => $(id).dataset.dirty === '1');
+  setDeep(files.fst, 'TMax', Number($('quickTMax').value || 120));
+  if (hasInflow || windDirty) setDeep(files.inflow, 'HWindSpeed', Number($('quickWind').value || 0));
+  if (hasSea || waveDirty) {
+    setDeep(files.sea, 'WaveMod', Number($('quickWaveMod').value || 0));
+    setDeep(files.sea, 'WaveHs', Number($('quickHs').value || 0));
+    setDeep(files.sea, 'WaveTp', Number($('quickTp').value || 0));
+    setDeep(files.sea, 'WavePkShp', parseValue($('quickWavePkShp').value.trim() || 'DEFAULT'));
+    setDeep(files.sea, 'WaveDir', Number($('quickWaveDir').value || 0));
+  }
+}
+
 function renderAll() {
   normalizeScenario();
   $('workspacePath').textContent = state.meta?.root || '';
@@ -126,8 +193,10 @@ function renderAll() {
   renderInterfaces();
   renderDocs();
   renderCases();
+  renderQuickInputs();
   renderRunOptions();
   renderReferenceFigures();
+  renderDlcLearning();
   renderModuleSwitches();
   renderAdvancedRows();
   renderHydroTables();
@@ -293,6 +362,222 @@ function renderDocs() {
   }
 }
 
+function dlcWindToken(value) {
+  return String(value).replace('.', 'p');
+}
+
+function dlcSelectedRow() {
+  const selected = Number($('dlcWindSpeed')?.value || 8);
+  return DLC11_ROWS.find(row => row.wind === selected) || DLC11_ROWS.find(row => row.wind === 8) || DLC11_ROWS[0];
+}
+
+function isIeaModelSelected() {
+  const files = activeFiles();
+  return state.selectedModelId === 'iea_15_240_umaine' || String(files.fst || '').includes('IEA-15-240');
+}
+
+function renderDlcLearning() {
+  const select = $('dlcWindSpeed');
+  if (!select) return;
+  const currentValue = select.value || '8';
+  if (!select.options.length) {
+    for (const row of DLC11_ROWS) {
+      const option = document.createElement('option');
+      option.value = row.wind;
+      option.textContent = `${row.wind} m/s | Hs ${row.hs} m | Tp ${row.tp} s | Gamma ${row.gamma}`;
+      select.appendChild(option);
+    }
+  }
+  select.value = DLC11_ROWS.some(row => String(row.wind) === currentValue) ? currentValue : '8';
+  const selected = dlcSelectedRow();
+
+  const status = $('dlcStatus');
+  if (status) {
+    status.innerHTML = [
+      isIeaModelSelected()
+        ? '当前模型适配 IEA 15MW / UMaineSemi。'
+        : '<span class="danger-text">请先在顶部模型模板中选择 IEA-15-240-RWT UMaineSemi。</span>',
+      `当前选择: Wind=${selected.wind} m/s, Hs=${selected.hs} m, Tp=${selected.tp} s, Gamma=${selected.gamma}.`
+    ].join('<br>');
+  }
+
+  const body = $('dlcTableBody');
+  if (body) {
+    body.innerHTML = '';
+    for (const row of DLC11_ROWS) {
+      const tr = document.createElement('tr');
+      tr.className = row.wind === selected.wind ? 'selected' : '';
+      tr.innerHTML = `<td>${row.wind}</td><td>${row.hs.toFixed(2)}</td><td>${row.tp.toFixed(2)}</td><td>${row.gamma.toFixed(2)}</td><td>DLC 1.1 NTM, aligned wind/wave 0 deg</td>`;
+      tr.onclick = () => {
+        select.value = row.wind;
+        renderDlcLearning();
+      };
+      body.appendChild(tr);
+    }
+  }
+
+  const help = $('dlcParamHelp');
+  if (help && !help.children.length) {
+    for (const [key, file, description] of DLC_PARAM_HELP) {
+      const card = document.createElement('div');
+      card.className = 'param-help-card';
+      card.innerHTML = `<strong>${escapeHtml(key)}</strong><span>${escapeHtml(file)} | ${escapeHtml(description)}</span>`;
+      help.appendChild(card);
+    }
+  }
+}
+
+function fileDir(fileName) {
+  const normalized = String(fileName || '').replaceAll('\\', '/');
+  const index = normalized.lastIndexOf('/');
+  return index >= 0 ? normalized.slice(0, index) : '';
+}
+
+function dlcNumber(id, fallback) {
+  const value = Number($(id)?.value);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function dlcBtsSourceForCase(template, row, seedIndex, windSeed) {
+  return String(template || '')
+    .replaceAll('{seed}', String(seedIndex))
+    .replaceAll('{windSeed}', String(windSeed))
+    .replaceAll('{wind}', dlcWindToken(row.wind))
+    .replaceAll('{wind_speed}', String(row.wind));
+}
+
+function paperMetricsComparison(row) {
+  return {
+    mode: 'paper_metrics',
+    label: `DLC 1.1 NTM row: Wind=${row.wind} m/s, Hs=${row.hs} m, Tp=${row.tp} s, Gamma=${row.gamma}`,
+    reference: 'NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks',
+    start_time_s: 100,
+    limits: {
+      platform_pitch_abs_max_deg: 6,
+      horizontal_offset_abs_max_m: 25,
+      rna_accel_abs_max_mps2: 1.5,
+      fairlead_tension_abs_max_kN: 22286
+    }
+  };
+}
+
+function buildDlcCase(row, seedIndex, options) {
+  const files = activeFiles();
+  const windToken = dlcWindToken(row.wind);
+  const seedText = String(seedIndex).padStart(2, '0');
+  const modePrefix = options.windMode === 'ntm_formal' ? 'ntm' : 'steady';
+  const caseName = `dlc1p1_${modePrefix}_U${windToken}_seed${seedText}`;
+  const windSeed = options.windSeedBase + seedIndex - 1;
+  const waveSeed = options.waveSeedBase + seedIndex - 1;
+  const inflowDir = fileDir(files.inflow);
+  const windDir = inflowDir ? `${inflowDir}/Wind` : 'Wind';
+  const btsName = `${caseName}.bts`;
+  const btsTarget = `${windDir}/${btsName}`;
+  const fileNameBts = `Wind/${btsName}`;
+  const set = {
+    [files.fst]: {
+      TMax: options.tmax,
+      CompInflow: 1,
+      CompAero: 2,
+      CompServo: 1,
+      [files.seaStateCompKey]: 1,
+      CompHydro: 1,
+      CompMooring: isIeaModelSelected() ? 3 : files.defaultMooring
+    },
+    [files.inflow]: options.windMode === 'ntm_formal'
+      ? { WindType: 3, HWindSpeed: row.wind, FileName_BTS: fileNameBts }
+      : { WindType: 1, HWindSpeed: row.wind, FileName_BTS: 'none' },
+    [files.sea]: {
+      WaveMod: 2,
+      WaveTMax: options.tmax + 250,
+      WaveDT: 0.25,
+      WaveHs: row.hs,
+      WaveTp: row.tp,
+      WavePkShp: row.gamma,
+      WvLowCOff: 0.111527,
+      WvHiCOff: 3.2,
+      WaveDir: 0,
+      'WaveSeed(1)': waveSeed
+    }
+  };
+  const caseData = {
+    name: caseName,
+    fst: files.fst,
+    hydro_file: state.meta?.modelProfile?.hydroFile || '',
+    set,
+    dlc_metadata: {
+      dlc_id: 'DLC 1.1',
+      wind_model: options.windMode,
+      wind_speed: row.wind,
+      wave_hs: row.hs,
+      wave_tp: row.tp,
+      gamma: row.gamma,
+      seed_index: seedIndex,
+      wind_seed: windSeed,
+      wave_seed: waveSeed
+    },
+    comparison: options.plotMetrics ? paperMetricsComparison(row) : undefined,
+    notes: options.windMode === 'ntm_formal'
+      ? 'Formal DLC 1.1 NTM case. Requires the referenced TurbSim .bts file before OpenFAST can run.'
+      : 'Training case using steady wind with the DLC 1.1 wave condition; useful for learning and quick parameter checks.',
+    timeout: 7200
+  };
+  if (!caseData.hydro_file) delete caseData.hydro_file;
+  if (!caseData.comparison) delete caseData.comparison;
+  if (options.windMode === 'ntm_formal') {
+    caseData.turbsim_input = {
+      target: `${windDir}/${caseName}.in`,
+      wind_model: 'NTM',
+      wind_speed: row.wind,
+      seed: windSeed,
+      analysis_time: options.tmax + 120,
+      timestep: 0.05,
+      hub_height: 150,
+      grid_height: 252,
+      grid_width: 252,
+      iec_turbulence_class: 'B'
+    };
+    const source = dlcBtsSourceForCase(options.btsSource, row, seedIndex, windSeed).trim();
+    if (source) caseData.assets = [{ source, target: btsTarget }];
+  }
+  return caseData;
+}
+
+function generateDlcCases() {
+  collectForm();
+  if (!isIeaModelSelected()) {
+    throw new Error('请先选择 IEA-15-240-RWT UMaineSemi 模型，再生成 DLC 1.1 工况。');
+  }
+  const row = dlcSelectedRow();
+  const seedCount = Math.max(1, Math.min(12, Math.trunc(dlcNumber('dlcSeedCount', 6))));
+  const options = {
+    windMode: $('dlcWindMode').value,
+    tmax: Math.max(60, dlcNumber('dlcTMax', 600)),
+    windSeedBase: Math.trunc(dlcNumber('dlcWindSeedBase', 10101)),
+    waveSeedBase: Math.trunc(dlcNumber('dlcWaveSeedBase', -561580799)),
+    btsSource: $('dlcBtsSource').value || '',
+    plotMetrics: Boolean($('dlcPlotMetrics').checked)
+  };
+  const cases = [];
+  for (let seed = 1; seed <= seedCount; seed += 1) {
+    cases.push(buildDlcCase(row, seed, options));
+  }
+  const windToken = dlcWindToken(row.wind);
+  state.scenarioFile = `iea_dlc1p1_${options.windMode}_U${windToken}.json`;
+  state.scenario = {
+    name: `iea_dlc1p1_${options.windMode}_U${windToken}`,
+    description: `DLC 1.1 learning pack for IEA 15MW UMaineSemi: U=${row.wind} m/s, Hs=${row.hs} m, Tp=${row.tp} s, Gamma=${row.gamma}, seeds=${seedCount}.`,
+    model_id: state.selectedModelId,
+    runtime_id: state.selectedRuntimeId,
+    cases
+  };
+  state.selectedCase = 0;
+  state.plotComparison = options.plotMetrics ? 'true' : 'false';
+  localStorage.setItem('openfastGui.plotComparison', state.plotComparison);
+  renderAll();
+  toast(`已生成 ${seedCount} 个 DLC 1.1 case`);
+}
+
 function renderCases() {
   const wrap = $('caseList');
   wrap.innerHTML = '';
@@ -301,7 +586,7 @@ function renderCases() {
     div.className = `case-item ${index === state.selectedCase ? 'active' : ''}`;
     const setCount = Object.values(c.set || {}).reduce((n, values) => n + Object.keys(values).length, 0);
     div.innerHTML = `<div class="item-title"><span>${c.name || `case_${index + 1}`}</span><span class="badge">${setCount} keys</span></div><div class="item-meta">${c.notes || ''}</div>`;
-    div.onclick = () => { state.selectedCase = index; renderAll(); };
+    div.onclick = () => { collectForm(); state.selectedCase = index; renderAll(); };
     wrap.appendChild(div);
   });
   const c = currentCase();
@@ -876,9 +1161,10 @@ function renderMatrixRows() {
     panel.className = 'matrix-panel';
 
     const count = normalizedMatrixEdits().filter(edit => edit.block === block).length;
+    const hydroFile = state.meta?.modelProfile?.hydroFile || 'HydroDyn.dat';
     const title = document.createElement('div');
     title.className = 'matrix-title';
-    title.innerHTML = `<strong>${label}</strong><span>${block} | FOCAL_C4_HydroDyn.dat | ${count} 个覆盖值</span>`;
+    title.innerHTML = `<strong>${label}</strong><span>${block} | ${hydroFile} | ${count} 个覆盖值</span>`;
     panel.appendChild(title);
 
     const table = document.createElement('table');
@@ -953,6 +1239,7 @@ function renderCatalog() {
 
 function renderJson() {
   $('jsonEditor').value = JSON.stringify(state.scenario, null, 2);
+  state.jsonDirty = false;
 }
 
 function parseValue(value) {
@@ -974,6 +1261,7 @@ function collectForm() {
   const c = currentCase();
   c.name = $('caseName').value.trim() || c.name;
   c.notes = $('caseNotes').value.trim();
+  syncQuickInputsToCase();
   normalizedMatrixEdits(true);
   repairScenarioHydroReferences(state.scenario);
 }
@@ -1015,9 +1303,11 @@ async function loadScenario(file) {
 async function saveScenario() {
   collectForm();
   let data = state.scenario;
-  if ($('jsonEditor').value.trim()) {
+  if (state.jsonDirty && $('jsonEditor').value.trim()) {
     try { data = JSON.parse($('jsonEditor').value); state.scenario = data; }
     catch (err) { throw new Error(`JSON 格式错误: ${err.message}`); }
+  } else {
+    renderJson();
   }
   cleanupScenarioForSave(state.scenario);
   const saved = await api('/api/scenario', {
@@ -1096,6 +1386,7 @@ function applyPreset() {
     setDeep(files.sea, 'WaveMod', Number($('quickWaveMod').value || 1));
     setDeep(files.sea, 'WaveHs', Number($('quickHs').value || 2));
     setDeep(files.sea, 'WaveTp', Number($('quickTp').value || 10));
+    setDeep(files.sea, 'WavePkShp', parseValue($('quickWavePkShp').value.trim() || 'DEFAULT'));
     setDeep(files.sea, 'WaveDir', Number($('quickWaveDir').value || 0));
   }
   renderAll();
@@ -1135,6 +1426,11 @@ function bindEvents() {
   $('addMatrixBtn').onclick = () => { delete currentCase().matrix_edits; renderAll(); toast('已清空矩阵修改'); };
   $('addMorisonBtn').onclick = addDefaultMorisonMember;
   $('resetHydroTablesBtn').onclick = () => { delete currentCase().hydrodyn_tables; renderAll(); toast('已恢复模板 HydroDyn 表格'); };
+  $('dlcGenerateBtn').onclick = () => { try { generateDlcCases(); } catch (err) { toast(err.message); } };
+  ['dlcWindSpeed', 'dlcWindMode', 'dlcSeedCount', 'dlcTMax', 'dlcWindSeedBase', 'dlcWaveSeedBase', 'dlcBtsSource', 'dlcPlotMetrics'].forEach(id => {
+    const el = $(id);
+    if (el) el.oninput = renderDlcLearning;
+  });
   $('formatJsonBtn').onclick = () => { collectForm(); renderJson(); };
   $('saveBtn').onclick = () => saveScenario().catch(err => toast(err.message));
   $('generateBtn').onclick = () => startJob(true).catch(err => toast(err.message));
@@ -1142,6 +1438,14 @@ function bindEvents() {
   $('refreshBtn').onclick = async () => { await loadMeta(); renderAll(); };
   $('plotComparison').onchange = updatePlotComparisonPreference;
   $('catalogSearch').oninput = renderCatalog;
+  $('jsonEditor').oninput = () => { state.jsonDirty = true; };
+  ['quickTMax', 'quickWind', 'quickWaveMod', 'quickHs', 'quickTp', 'quickWavePkShp', 'quickWaveDir'].forEach(id => {
+    $(id).oninput = () => {
+      $(id).dataset.dirty = '1';
+      syncQuickInputsToCase();
+      renderJson();
+    };
+  });
   $('caseName').onchange = () => { currentCase().name = $('caseName').value.trim(); renderAll(); };
   $('caseNotes').onchange = () => { currentCase().notes = $('caseNotes').value.trim(); renderJson(); };
 }

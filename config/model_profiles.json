@@ -30,7 +30,7 @@
       "id": "iea_15_240_umaine",
       "name": "IEA-15-240-RWT UMaineSemi",
       "description": "IEA 15 MW offshore reference turbine on UMaine VolturnUS-S semi-submersible platform.",
-      "path": "D:/OpenFast/focal 4 自做/free_decay_harness_template/02_starting_model/openfast2026_reproducible_model/OpenFAST_input_files",
+      "path": "D:/OpenFast/FOCAL_C4_clean_workspace/02_starting_model/best_reproducible_model/OpenFAST_input_files",
       "fst": "IEA-15-240-RWT-UMaineSemi.fst",
       "hydroFile": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
       "inflowFile": "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat",
@@ -62,7 +62,7 @@
     {
       "id": "openfast_2026_dev",
       "name": "OpenFAST 2026 dev build",
-      "path": "D:/OpenFast/focal 4 自做/free_decay_harness_template/02_starting_model/openfast2026_reproducible_model/OpenFAST_input_files/OpenFAST_Release.exe",
+      "path": "D:/OpenFast/FOCAL_C4_clean_workspace/02_starting_model/best_reproducible_model/OpenFAST_input_files/OpenFAST_Release.exe",
       "runtimeFormat": "v5",
       "description": "Local OpenFAST_Release.exe bundled with the IEA-15-240 reproducible model. The executable reports OpenFAST-Unversioned from commit 2895884."
     }

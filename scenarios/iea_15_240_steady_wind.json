@@ -26,9 +26,332 @@
           "WaveMod": 0
         }
       },
-      "matrix_edits": [],
       "notes": "Uses the IEA profile and the local 2026 OpenFAST development executable.",
-      "timeout": 7200
+      "timeout": 7200,
+      "hydrodyn_tables": {
+        "target_format": "v5",
+        "tables": {
+          "axial": [
+            {
+              "AxCoefID": 1,
+              "AxCd": 0,
+              "AxCa": 0,
+              "AxCp": 1,
+              "AxFDMod": 0,
+              "AxVnCOff": 0,
+              "AxFDLoFSc": 1
+            }
+          ],
+          "joints": [
+            {
+              "JointID": 1,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": -20,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 2,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": 10,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 3,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": -20,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 4,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": 10,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 5,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": -20,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 6,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": 10,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 7,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": -20,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 8,
+              "Jointxi": 0,
+              "Jointyi": 0,
+              "Jointzi": 10,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            }
+          ],
+          "prop_sets_cyl": [
+            {
+              "PropSetID": 1,
+              "PropD": 6,
+              "PropThck": 0.06
+            },
+            {
+              "PropSetID": 2,
+              "PropD": 6,
+              "PropThck": 0.06
+            },
+            {
+              "PropSetID": 3,
+              "PropD": 6,
+              "PropThck": 0.06
+            },
+            {
+              "PropSetID": 4,
+              "PropD": 6,
+              "PropThck": 0.06
+            }
+          ],
+          "prop_sets_rec": [],
+          "simple_cyl": {
+            "SimplCd": 1,
+            "SimplCdMG": 0,
+            "SimplCa": 0,
+            "SimplCaMG": 0,
+            "SimplCp": 0,
+            "SimplCpMG": 0,
+            "SimplAxCd": 0,
+            "SimplAxCdMG": 0,
+            "SimplAxCa": 0,
+            "SimplAxCaMG": 0,
+            "SimplAxCp": 0,
+            "SimplAxCpMG": 0,
+            "SimplCb": 0,
+            "SimplCbMG": 0
+          },
+          "simple_rec": {
+            "SimplCdA": 0,
+            "SimplCdAMG": 0,
+            "SimplCdB": 0,
+            "SimplCdBMG": 0,
+            "SimplCaA": 0,
+            "SimplCaAMG": 0,
+            "SimplCaB": 0,
+            "SimplCaBMG": 0,
+            "SimplCp": 0,
+            "SimplCpMG": 0,
+            "SimplAxCd": 0,
+            "SimplAxCdMG": 0,
+            "SimplAxCa": 0,
+            "SimplAxCaMG": 0,
+            "SimplAxCp": 0,
+            "SimplAxCpMG": 0,
+            "SimplCb": 0,
+            "SimplCbMG": 0
+          },
+          "depth_cyl": [],
+          "depth_rec": [],
+          "member_coeffs_cyl": [
+            {
+              "MemberID": 1,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1,
+              "MemberCb1": 1,
+              "MemberCb2": 1,
+              "MemberCbMG1": 1,
+              "MemberCbMG2": 1
+            },
+            {
+              "MemberID": 2,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1,
+              "MemberCb1": 1,
+              "MemberCb2": 1,
+              "MemberCbMG1": 1,
+              "MemberCbMG2": 1
+            },
+            {
+              "MemberID": 3,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1,
+              "MemberCb1": 1,
+              "MemberCb2": 1,
+              "MemberCbMG1": 1,
+              "MemberCbMG2": 1
+            },
+            {
+              "MemberID": 4,
+              "MemberCd1": 1,
+              "MemberCd2": 1,
+              "MemberCdMG1": 1,
+              "MemberCdMG2": 1,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 1,
+              "MemberCaMG2": 1,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 1,
+              "MemberCpMG2": 1,
+              "MemberAxCd1": 1,
+              "MemberAxCd2": 1,
+              "MemberAxCdMG1": 1,
+              "MemberAxCdMG2": 1,
+              "MemberAxCa1": 1,
+              "MemberAxCa2": 1,
+              "MemberAxCaMG1": 1,
+              "MemberAxCaMG2": 1,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 1,
+              "MemberAxCpMG2": 1,
+              "MemberCb1": 1,
+              "MemberCb2": 1,
+              "MemberCbMG1": 1,
+              "MemberCbMG2": 1
+            }
+          ],
+          "member_coeffs_rec": [],
+          "members": [
+            {
+              "MemberID": 1,
+              "MJointID1": 1,
+              "MJointID2": 2,
+              "MPropSetID1": 1,
+              "MPropSetID2": 1,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            },
+            {
+              "MemberID": 2,
+              "MJointID1": 3,
+              "MJointID2": 4,
+              "MPropSetID1": 2,
+              "MPropSetID2": 2,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            },
+            {
+              "MemberID": 3,
+              "MJointID1": 5,
+              "MJointID2": 6,
+              "MPropSetID1": 3,
+              "MPropSetID2": 3,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            },
+            {
+              "MemberID": 4,
+              "MJointID1": 7,
+              "MJointID2": 8,
+              "MPropSetID1": 4,
+              "MPropSetID2": 4,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": false
+            }
+          ]
+        }
+      }
     }
   ]
 }

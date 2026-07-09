@@ -17,12 +17,16 @@
       "set": {
         "FOCAL_C4.fst": {
           "TMax": 9294.4,
-          "CompInflow": 0,
-          "CompAero": 0,
-          "CompServo": 0,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
           "CompSeaState": 1,
           "CompHydro": 1,
           "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 0
         },
         "SeaState_DLC_1p6.dat": {
           "WaveMod": 2,
@@ -35,7 +39,6 @@
           "WaveSeed(1)": 11
         }
       },
-      "matrix_edits": [],
       "comparison": {
         "experiment_id": "operational_E11"
       },
@@ -48,12 +51,16 @@
       "set": {
         "FOCAL_C4.fst": {
           "TMax": 9754.4,
-          "CompInflow": 0,
-          "CompAero": 0,
-          "CompServo": 0,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
           "CompSeaState": 1,
           "CompHydro": 1,
           "CompMooring": 3
+        },
+        "FOCAL_C4_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 0
         },
         "SeaState_DLC_1p6.dat": {
           "WaveMod": 2,
@@ -66,7 +73,6 @@
           "WaveSeed(1)": 21
         }
       },
-      "matrix_edits": [],
       "comparison": {
         "experiment_id": "extreme_E21"
       },

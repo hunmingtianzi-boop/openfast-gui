@@ -31,7 +31,10 @@ for import_path in [WORK_C4, USER_TOOLS]:
 
 from driver_c4 import _ensure_hydrodyn_v4  # noqa: E402
 from hydrodyn_tables import parse_hydrodyn_tables  # noqa: E402
+from openfast_input import outlists_for_structure, parse_scalar_fields, read_text_lines  # noqa: E402
+from results_workspace import analyze_results, discover_results, read_output_metadata, resolve_result_path  # noqa: E402
 from model_profiles import (  # noqa: E402
+    dependency_structure_for_model,
     input_files_for_model,
     model_profiles,
     runtime_profiles,
@@ -135,6 +138,8 @@ DOC_LINKS = [
     {"label": "SeaState 输入", "url": "https://openfast.readthedocs.io/en/dev/source/user/seastate/input_files.html"},
     {"label": "HydroDyn 输入", "url": "https://openfast.readthedocs.io/en/main/source/user/hydrodyn/input_files.html"},
     {"label": "MoorDyn 输入", "url": "https://moordyn.readthedocs.io/en/latest/inputs.html"},
+    {"label": "FOCAL Campaign 4 数据", "url": "https://wdh.energy.gov/ds/focal/focal.campaign4"},
+    {"label": "FOCAL OpenFAST 验证论文", "url": "https://doi.org/10.3390/machines11090865"},
 ]
 
 
@@ -303,27 +308,29 @@ def interface_modes_for(model: dict, runtime: dict) -> list[dict]:
     ]
 
 
-def parse_template_keys(model: dict) -> dict[str, list[dict]]:
+def parse_template_keys(model: dict, structure: dict | None = None) -> dict[str, list[dict]]:
     result: dict[str, list[dict]] = {}
     base = model_path(model)
-    for file_name in input_files_for_model(model):
+    for file_name in input_files_for_model(model, structure=structure):
         path = base / file_name
         if not path.is_file():
             continue
         rows = []
-        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
-            match = KEY_LINE_RE.match(line)
-            if not match:
-                continue
-            key = match.group("key")
+        lines, _, _ = read_text_lines(path)
+        for field in parse_scalar_fields(lines):
+            key = field["key"]
             if key.upper() in {"END", "OUTLIST"} or key.startswith("-"):
                 continue
-            value = match.group("value")
             if key in {"OUTPUT", "LINEARIZATION", "VISUALIZATION", "BLADE", "ROTOR", "DRIVETRAIN", "FURLING", "TOWER", "WAVES", "CURRENT", "MACCAMY", "MEMBER", "MEMBERS", "DEPTH", "HIGH", "NACELLE", "THEVENIN", "OLAF", "Beddoes"}:
                 continue
-            rows.append({"line": number, "key": key, "value": value})
+            rows.append(field)
         result[file_name] = rows
     return result
+
+
+def parse_model_outlists(model: dict, structure: dict | None = None) -> dict[str, list[dict]]:
+    structure = structure or dependency_structure_for_model(model)
+    return outlists_for_structure(model_path(model), structure)
 
 
 def parse_hydrodyn_matrices(model: dict) -> dict[str, list[list[float]]]:
@@ -381,6 +388,7 @@ def scenario_list() -> list[dict]:
 
 def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
     model, runtime = active_context(options=options)
+    workers = max(1, min(int(options.get("workers") or 1), 8))
     command = [
         PYTHON,
         str(RUN_SCENARIO),
@@ -396,6 +404,8 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
         model.get("compatibility") or "none",
         "--fst",
         model.get("fst") or "FOCAL_C4.fst",
+        "--workers",
+        str(workers),
     ]
     if options.get("generateOnly"):
         command.append("--generate-only")
@@ -403,6 +413,8 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
         command.append("--overwrite")
     if options.get("continueOnFail"):
         command.append("--continue-on-fail")
+    if options.get("resume"):
+        command.append("--resume")
     if options.get("plotComparison"):
         command.append("--plot-comparison")
 
@@ -413,6 +425,7 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
                 "command": command,
                 "modelId": model.get("id"),
                 "runtimeId": runtime.get("id"),
+                "workers": workers,
                 "startedAt": time.time(),
             }
         )
@@ -482,6 +495,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/meta":
                 model, runtime = active_context(qs=qs)
+                structure = dependency_structure_for_model(model)
                 return self.send_json(
                     {
                         "root": str(ROOT),
@@ -495,7 +509,9 @@ class Handler(BaseHTTPRequestHandler):
                         "selectedRuntimeId": runtime.get("id"),
                         "openfastExists": bool(runtime.get("exists")),
                         "runScenario": str(RUN_SCENARIO),
-                        "templateKeys": parse_template_keys(model),
+                        "modelStructure": structure,
+                        "templateKeys": parse_template_keys(model, structure=structure),
+                        "outLists": parse_model_outlists(model, structure=structure),
                         "hydroMatrices": parse_hydrodyn_matrices(model),
                         "hydroTables": parse_hydrodyn_tables_meta(model, runtime),
                         "modulePresets": module_presets_for(model),
@@ -509,6 +525,12 @@ class Handler(BaseHTTPRequestHandler):
                 name = qs.get("file", [""])[0]
                 path_obj = scenario_path(name)
                 return self.send_json({"file": path_obj.name, "data": read_json(path_obj)})
+            if path == "/api/results":
+                return self.send_json(discover_results(RUNS))
+            if path == "/api/results/meta":
+                file_id = qs.get("file", [""])[0]
+                result_path = resolve_result_path(RUNS, file_id)
+                return self.send_json({"id": file_id, "metadata": read_output_metadata(result_path)})
             if path == "/api/jobs":
                 with JOBS_LOCK:
                     jobs = [job_snapshot(job) for job in JOBS.values()]
@@ -566,6 +588,19 @@ class Handler(BaseHTTPRequestHandler):
                 thread = threading.Thread(target=run_job, args=(job_id, path_obj, body.get("options") or {}), daemon=True)
                 thread.start()
                 return self.send_json({"ok": True, "jobId": job_id})
+            if parsed.path == "/api/results/analyze":
+                start = body.get("start")
+                end = body.get("end")
+                result = analyze_results(
+                    RUNS,
+                    file_ids=body.get("files") or [],
+                    channels=body.get("channels") or [],
+                    start=float(start) if start not in {None, ""} else None,
+                    end=float(end) if end not in {None, ""} else None,
+                    max_points=int(body.get("maxPoints") or 5000),
+                    include_psd=bool(body.get("includePsd", True)),
+                )
+                return self.send_json(result)
             return self.send_error_json("Unknown endpoint", status=404)
         except Exception as exc:
             return self.send_error_json(exc, status=500)

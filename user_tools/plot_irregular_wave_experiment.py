@@ -5,17 +5,22 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import pathlib
 import shutil
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.signal import welch
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DATA = pathlib.Path(
-    r"D:\OpenFast\FOCAL_C4_workflow_hub\00_shared_assets\raw_data\focal_c4_organized\04_irregular_wave"
+    os.environ.get(
+        "FOCAL_C4_IRREGULAR_DATA",
+        r"D:\OpenFast\FOCAL_C4_PROJECT\01_data\raw_focal_c4_organized\04_irregular_wave",
+    )
 )
 REPORT_DIR = ROOT / "reports" / "figures" / "irregular_wave"
 WEB_DIR = ROOT / "webui" / "assets" / "irregular_wave"
@@ -30,6 +35,33 @@ SIM_CHANNEL_ALIASES = {
     "Pitch": ["PtfmPitch", "Pitch"],
     "Yaw": ["PtfmYaw", "Yaw"],
 }
+FOCAL_WAVE_GROUPS = {
+    "E11_E15": {
+        "id": "E11_E15",
+        "label": "E11-E15 operational sea state",
+        "folder": "E11_E15_operational_Hs3p1_Tp8p96",
+        "seed_ids": list(range(11, 16)),
+        "hs": 3.1,
+        "tp": 8.96,
+        "gamma": 1.80,
+        "duration_s": 9294.4,
+    },
+    "E21_E25": {
+        "id": "E21_E25",
+        "label": "E21-E25 1-year extreme sea state",
+        "folder": "E21_E25_extreme_Hs8p1_Tp12p8",
+        "seed_ids": list(range(21, 26)),
+        "hs": 8.1,
+        "tp": 12.8,
+        "gamma": 2.75,
+        "duration_s": 9754.4,
+    },
+}
+DEFAULT_MODE_FREQUENCIES = {
+    "Surge": 1.0 / 80.79,
+    "Pitch": 1.0 / 30.79,
+    "Tower": 0.458,
+}
 
 
 def header_columns(path: pathlib.Path) -> list[str]:
@@ -42,6 +74,261 @@ def load_channels(path: pathlib.Path) -> dict[str, np.ndarray]:
     indices = [header.index(name) for name in CHANNELS]
     data = np.loadtxt(path, delimiter=",", skiprows=2, usecols=indices)
     return {name: data[:, index] for index, name in enumerate(CHANNELS)}
+
+
+def load_wave_calibration(path: pathlib.Path, channel: str = "waveStaff2") -> dict[str, np.ndarray]:
+    """Load the report's calibration-probe element and remove repeated timestamps."""
+    header = header_columns(path)
+    selected = channel if channel in header else "waveElev"
+    indices = [header.index("Time"), header.index(selected)]
+    raw = np.loadtxt(path, delimiter=",", skiprows=2, usecols=indices)
+    if raw.ndim == 1:
+        raw = raw.reshape(1, -1)
+    finite = np.isfinite(raw).all(axis=1)
+    raw = raw[finite]
+    unique_time = np.r_[True, np.diff(raw[:, 0]) > 0]
+    raw = raw[unique_time]
+    return {"Time": raw[:, 0], "waveElev": raw[:, 1]}
+
+
+def focal_seed_records(data_root: pathlib.Path, group_id: str) -> list[dict[str, Any]]:
+    spec = FOCAL_WAVE_GROUPS[group_id]
+    primary = data_root / spec["folder"]
+    fallback = data_root.parent / "07_unknown_or_unclear"
+    records: list[dict[str, Any]] = []
+    for seed_id in spec["seed_ids"]:
+        pattern = f"*E{seed_id}W00_R01_R01*.csv"
+        matches = sorted(primary.glob(pattern))
+        if not matches:
+            matches = sorted(fallback.glob(pattern))
+        if not matches:
+            raise FileNotFoundError(f"FOCAL E{seed_id} CSV not found below {data_root.parent}")
+        records.append(
+            {
+                "id": f"E{seed_id}",
+                "label": f"E{seed_id}",
+                "source_label": matches[0].stem,
+                "path": matches[0],
+            }
+        )
+    return records
+
+
+def wave_psd(
+    data: dict[str, np.ndarray],
+    start_s: float = 2000.0,
+    end_s: float = 8000.0,
+    segment_seconds: float = 768.0,
+) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
+    time_values = data["Time"]
+    wave = data["waveElev"]
+    mask = (time_values >= start_s) & (time_values <= end_s)
+    if np.count_nonzero(mask) < 16:
+        raise ValueError(f"Not enough wave samples in PSD window {start_s:g}-{end_s:g} s")
+    time_values = time_values[mask]
+    wave = wave[mask]
+    time_diffs = np.diff(time_values)
+    positive = time_diffs[time_diffs > 0]
+    if not positive.size:
+        raise ValueError("Wave time series has no positive time step")
+    sample_rate = 1.0 / float(np.median(positive))
+    nperseg = min(len(wave), max(256, int(round(sample_rate * segment_seconds))))
+    frequencies, density = welch(
+        wave,
+        fs=sample_rate,
+        window="hann",
+        nperseg=nperseg,
+        noverlap=nperseg // 2,
+        detrend="constant",
+        scaling="density",
+    )
+    positive_frequency = frequencies > 0
+    peak_index = int(np.argmax(density[positive_frequency]))
+    peak_frequency = float(frequencies[positive_frequency][peak_index])
+    hs_psd = float(4.0 * np.sqrt(np.trapezoid(density, frequencies)))
+    return frequencies, density, {
+        "sample_rate_hz": sample_rate,
+        "nperseg": float(nperseg),
+        "peak_frequency_hz": peak_frequency,
+        "hs_psd_m": hs_psd,
+    }
+
+
+def plot_wave_calibration_group(
+    records: list[dict[str, Any]],
+    group_id: str,
+    out_png: pathlib.Path,
+    out_pdf: pathlib.Path,
+    mode_frequencies: dict[str, float] | None = None,
+    psd_start_s: float = 2000.0,
+    psd_end_s: float = 8000.0,
+) -> dict[str, Any]:
+    spec = FOCAL_WAVE_GROUPS[group_id]
+    mode_frequencies = mode_frequencies or DEFAULT_MODE_FREQUENCIES
+    colors = plt.get_cmap("tab10").colors
+    plt.rcParams.update(
+        {
+            "font.size": 10,
+            "axes.titlesize": 11,
+            "axes.labelsize": 10,
+            "legend.fontsize": 9,
+            "figure.dpi": 130,
+        }
+    )
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(12.5, 7.5),
+        gridspec_kw={"height_ratios": [1.15, 1]},
+        constrained_layout=True,
+    )
+    seed_stats = []
+    for index, record in enumerate(records):
+        data = record["data"]
+        plotted = downsample(data, max_points=12000)
+        color = colors[index % len(colors)]
+        axes[0].plot(plotted["Time"], plotted["waveElev"], lw=0.65, color=color, label=record["label"])
+        frequency, density, psd_stats = wave_psd(data, start_s=psd_start_s, end_s=psd_end_s)
+        visible = frequency <= 0.5
+        axes[1].plot(frequency[visible], density[visible], lw=0.9, color=color, label=record["label"])
+        seed_stats.append(
+            {
+                "id": record["id"],
+                "source": str(record.get("path") or record.get("source") or ""),
+                "duration_s": float(data["Time"][-1] - data["Time"][0]),
+                "hs_4std_m": float(4.0 * np.std(data["waveElev"])),
+                **psd_stats,
+            }
+        )
+
+    axes[0].set_ylabel("Wave elevation (m)")
+    axes[0].set_xlabel("Time (s)")
+    axes[0].set_xlim(left=0)
+    axes[0].grid(True, alpha=0.24)
+    axes[0].legend(loc="upper right", ncol=min(5, len(records)))
+
+    mode_colors = {"Surge": "#ef4444", "Pitch": "#1d4ed8", "Tower": "#d946ef"}
+    label_y = 0.97
+    for name, frequency in mode_frequencies.items():
+        axes[1].axvline(frequency, color=mode_colors.get(name, "#64748b"), lw=0.9, alpha=0.8)
+        axes[1].text(
+            frequency,
+            label_y,
+            name,
+            color=mode_colors.get(name, "#64748b"),
+            rotation=90,
+            va="top",
+            ha="right",
+            transform=axes[1].get_xaxis_transform(),
+        )
+    axes[1].set_xlim(0, 0.5)
+    axes[1].set_ylim(bottom=0)
+    axes[1].set_xlabel("Frequency (Hz)")
+    axes[1].set_ylabel("Wave elevation PSD (m$^2$/Hz)")
+    axes[1].grid(True, alpha=0.24)
+    axes[1].legend(loc="upper right", ncol=min(5, len(records)))
+    fig.suptitle(
+        f"FOCAL Campaign 4 {spec['id'].replace('_', '-')} | "
+        f"Hs={spec['hs']:g} m, Tp={spec['tp']:g} s, Gamma={spec['gamma']:.2f}",
+        fontsize=13,
+        fontweight="bold",
+    )
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=180, bbox_inches="tight", facecolor="white")
+    fig.savefig(out_pdf, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    result = {
+        "ok": True,
+        "comparison_type": "focal_wave_calibration",
+        "group": group_id,
+        "label": f"FOCAL {spec['id'].replace('_', '-')} wave time histories and PSD",
+        "png": str(out_png),
+        "pdf": str(out_pdf),
+        "psd_window_s": [psd_start_s, psd_end_s],
+        "psd_method": "Welch, Hann window, 768 s segments, 50% overlap",
+        "mode_frequencies_hz": mode_frequencies,
+        "seeds": seed_stats,
+    }
+    out_png.with_suffix(".json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    return result
+
+
+def create_focal_reference_figures(
+    data_root: pathlib.Path = DEFAULT_DATA,
+    report_dir: pathlib.Path = REPORT_DIR,
+    web_dir: pathlib.Path = WEB_DIR,
+) -> list[dict[str, Any]]:
+    results = []
+    for group_id in FOCAL_WAVE_GROUPS:
+        records = focal_seed_records(data_root, group_id)
+        for record in records:
+            record["data"] = load_wave_calibration(record["path"])
+        stem = f"focal_{group_id.lower()}_calibration"
+        result = plot_wave_calibration_group(
+            records,
+            group_id=group_id,
+            out_png=report_dir / f"{stem}.png",
+            out_pdf=report_dir / f"{stem}.pdf",
+        )
+        web_dir.mkdir(parents=True, exist_ok=True)
+        web_path = web_dir / f"{stem}.png"
+        shutil.copyfile(result["png"], web_path)
+        result["web_png"] = str(web_path)
+        result["web_url"] = f"/assets/irregular_wave/{stem}.png"
+        results.append(result)
+    (report_dir / "focal_calibration_manifest.json").write_text(
+        json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return results
+
+
+def create_focal_simulation_aggregate(
+    case_summaries: list[dict[str, Any]],
+    scenario_cases: list[dict[str, Any]],
+    group_id: str,
+    out_png: pathlib.Path,
+    out_pdf: pathlib.Path,
+    mode_frequencies: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    case_by_name = {str(case.get("name") or ""): case for case in scenario_cases}
+    records = []
+    for summary in case_summaries:
+        case_name = str(summary.get("case") or "")
+        original = case_by_name.get(case_name)
+        metadata = summary.get("focal_wave") or (original or {}).get("focal_wave") or {}
+        if metadata.get("group") != group_id or not summary.get("execution", {}).get("ok"):
+            continue
+        out_path = pathlib.Path(str(summary["execution"].get("out") or ""))
+        if not out_path.is_file():
+            continue
+        data, _ = load_openfast_channels(out_path)
+        if "waveElev" not in data:
+            continue
+        records.append(
+            {
+                "id": metadata.get("wave_id") or case_name,
+                "label": metadata.get("wave_id") or case_name,
+                "path": out_path,
+                "data": {"Time": data["Time"], "waveElev": data["waveElev"]},
+            }
+        )
+    expected = len(FOCAL_WAVE_GROUPS[group_id]["seed_ids"])
+    if len(records) != expected:
+        return {
+            "ok": False,
+            "skipped": True,
+            "reason": f"expected_{expected}_completed_cases_found_{len(records)}",
+            "group": group_id,
+        }
+    records.sort(key=lambda record: record["label"])
+    return plot_wave_calibration_group(
+        records,
+        group_id=group_id,
+        out_png=out_png,
+        out_pdf=out_pdf,
+        mode_frequencies=mode_frequencies,
+    )
 
 
 def representative_files(data_root: pathlib.Path) -> list[dict]:
@@ -368,8 +655,16 @@ def write_summary(records: list[dict], out_csv: pathlib.Path, out_json: pathlib.
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", default=str(DEFAULT_DATA))
+    parser.add_argument("--calibration-figures", action="store_true")
     args = parser.parse_args(argv)
     data_root = pathlib.Path(args.data_root)
+    if args.calibration_figures:
+        results = create_focal_reference_figures(data_root=data_root)
+        for result in results:
+            print(f"PNG: {result['png']}")
+            print(f"PDF: {result['pdf']}")
+            print(f"WEB: {result['web_png']}")
+        return 0
     records = representative_files(data_root)
     for record in records:
         record["data"] = load_channels(record["path"])

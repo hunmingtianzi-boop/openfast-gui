@@ -3,89 +3,116 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="本地 OpenFAST 工况配置、运行与结果对比控制台">
+  <meta name="theme-color" content="#f5f7f7">
   <title>OpenFAST 工况控制台</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">跳到主要内容</a>
   <header class="topbar">
-    <div>
-      <div class="app-title">OpenFAST 工况控制台</div>
-      <div class="app-subtitle" id="workspacePath">D:\OpenFast\openfast_user_workspace</div>
+    <div class="brand-lockup">
+      <div class="brand-mark" aria-hidden="true">OF</div>
+      <div class="brand-copy">
+        <div class="app-title">OpenFAST 工况控制台</div>
+        <div class="app-subtitle" id="workspacePath">D:\OpenFast\openfast_user_workspace</div>
+      </div>
     </div>
+    <button id="jobStatusButton" class="job-chip" type="button" title="查看运行日志">
+      <span id="topStatusDot" class="status-dot" aria-hidden="true"></span>
+      <span class="job-chip-copy">
+        <span class="job-chip-label">当前任务</span>
+        <strong id="topJobStatus">空闲</strong>
+      </span>
+      <span id="topJobProgress" class="job-chip-progress">尚未运行</span>
+    </button>
     <div class="top-actions">
-      <button id="refreshBtn" class="button subtle">刷新</button>
+      <button id="refreshBtn" class="button subtle" title="刷新模型、场景和任务状态">刷新</button>
       <button id="saveBtn" class="button">保存场景</button>
       <button id="generateBtn" class="button strong">生成输入</button>
       <button id="runBtn" class="button danger">运行 OpenFAST</button>
     </div>
   </header>
 
-  <main class="layout">
+  <main id="mainContent" class="layout">
     <aside class="sidebar">
-      <section class="panel">
+      <section class="panel scenario-panel">
         <div class="panel-head">
-          <h2>场景文件</h2>
+          <div>
+            <h2>场景文件</h2>
+            <p class="section-kicker">选择、搜索和复用已有工况</p>
+          </div>
           <button id="newScenarioBtn" class="mini-button">新建</button>
         </div>
+        <label class="sidebar-search">
+          <span class="sr-only">搜索场景</span>
+          <input id="scenarioSearch" type="search" placeholder="搜索场景名或说明">
+        </label>
         <div id="scenarioList" class="scenario-list"></div>
       </section>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>运行接口</h2>
-        </div>
+      <details class="panel sidebar-details">
+        <summary>运行接口</summary>
         <div id="interfaceModes" class="mode-list"></div>
-      </section>
+      </details>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>官方参考</h2>
-        </div>
+      <details class="panel sidebar-details">
+        <summary>官方参考</summary>
         <div id="docLinks" class="doc-list"></div>
-      </section>
+      </details>
     </aside>
 
     <section class="workspace">
-      <div class="profile-strip">
-        <label>
-          <span>模型模板</span>
-          <select id="modelSelect"></select>
-        </label>
-        <label>
-          <span>OpenFAST runtime</span>
-          <select id="runtimeSelect"></select>
-        </label>
-        <div class="profile-status" id="profileStatus"></div>
-      </div>
-      <div class="strip">
-        <label>
-          <span>文件名</span>
-          <input id="scenarioFile" value="ui_scenario.json">
-        </label>
-        <label>
-          <span>场景名</span>
-          <input id="scenarioName" value="ui_scenario">
-        </label>
-        <label class="wide">
-          <span>说明</span>
-          <input id="scenarioDescription" value="Created from visual UI">
-        </label>
-      </div>
+      <section class="panel workspace-context">
+        <div class="context-head">
+          <div>
+            <h2>运行上下文</h2>
+            <p class="section-kicker">模型、运行时与当前场景</p>
+          </div>
+          <div class="profile-status" id="profileStatus"></div>
+        </div>
+        <div class="context-grid">
+          <label class="context-model">
+            <span>模型模板</span>
+            <select id="modelSelect"></select>
+          </label>
+          <label class="context-runtime">
+            <span>OpenFAST runtime</span>
+            <select id="runtimeSelect"></select>
+          </label>
+          <label class="context-file">
+            <span>文件名</span>
+            <input id="scenarioFile" value="ui_scenario.json">
+          </label>
+          <label class="context-name">
+            <span>场景名</span>
+            <input id="scenarioName" value="ui_scenario">
+          </label>
+          <label class="context-description">
+            <span>说明</span>
+            <input id="scenarioDescription" value="Created from visual UI">
+          </label>
+        </div>
+      </section>
 
-      <div class="tabs">
+      <nav class="tabs" aria-label="工作区视图">
         <button class="tab active" data-tab="compose">工况配置</button>
         <button class="tab" data-tab="dlc">DLC 学习</button>
         <button class="tab" data-tab="advanced">高级键值</button>
+        <button class="tab" data-tab="model">模型结构</button>
+        <button class="tab" data-tab="outputs">输出通道</button>
         <button class="tab" data-tab="hydro">水动力构件</button>
         <button class="tab" data-tab="catalog">参数库</button>
         <button class="tab" data-tab="json">JSON</button>
+        <button class="tab" data-tab="results">结果分析</button>
         <button class="tab" data-tab="runlog">运行日志</button>
-      </div>
+      </nav>
 
       <section id="tab-compose" class="tab-page active">
-        <div class="grid-2">
-          <section class="panel">
+        <div class="grid-2 compose-grid">
+          <div class="compose-column">
+            <section class="panel preset-panel">
             <div class="panel-head">
               <h2>模式预设</h2>
               <button id="applyPresetBtn" class="mini-button">应用到当前 case</button>
@@ -101,11 +128,24 @@
               <label><span>WavePkShp</span><input id="quickWavePkShp" type="text" value="DEFAULT"></label>
               <label><span>WaveDir deg</span><input id="quickWaveDir" type="number" step="1" value="0"></label>
             </div>
-          </section>
+            </section>
 
-          <section class="panel">
+            <section class="panel module-panel">
+              <div class="panel-head">
+                <h2>主模块开关</h2>
+                <span class="hint">写入 FOCAL_C4.fst</span>
+              </div>
+              <div class="switch-grid" id="moduleSwitches"></div>
+            </section>
+          </div>
+
+          <div class="compose-column">
+            <section class="panel case-panel">
             <div class="panel-head">
-              <h2>当前 case</h2>
+              <div>
+                <h2>当前 case</h2>
+                <p id="caseCount" class="section-kicker">1 / 1</p>
+              </div>
               <button id="addCaseBtn" class="mini-button">添加 case</button>
             </div>
             <div id="caseList" class="case-list"></div>
@@ -115,10 +155,13 @@
               <div class="switch-row">
                 <label><input id="overwriteRun" type="checkbox" checked> 覆盖同名输出</label>
                 <label><input id="continueOnFail" type="checkbox"> 失败后继续</label>
+                <label><input id="resumeCompleted" type="checkbox" checked> 跳过已完成</label>
                 <label><input id="plotComparison" type="checkbox"> 运行后出图</label>
+                <label class="worker-control"><span>并行工况</span><input id="parallelWorkers" type="number" min="1" max="4" step="1" value="1" title="同时运行的 OpenFAST case 数量"></label>
               </div>
             </div>
-          </section>
+            </section>
+          </div>
         </div>
 
         <section class="panel" id="referencePanel">
@@ -128,13 +171,6 @@
           <div id="referenceFigures" class="reference-figures"></div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head">
-            <h2>主模块开关</h2>
-            <span class="hint">写入 FOCAL_C4.fst</span>
-          </div>
-          <div class="switch-grid" id="moduleSwitches"></div>
-        </section>
       </section>
 
       <section id="tab-dlc" class="tab-page">
@@ -209,6 +245,43 @@
 
         <section class="panel">
           <div class="panel-head">
+            <div>
+              <h2>FOCAL Campaign 4 · Table 24</h2>
+              <p class="hint">UMaine ASCC 23-57-1183 · 实验五种子与 OpenFAST JONSWAP 统计复现</p>
+            </div>
+            <button id="focalWaveGenerateBtn" class="button strong">生成五种子 case</button>
+          </div>
+          <div id="focalWaveStatus" class="hint"></div>
+          <div class="dlc-controls focal-wave-controls">
+            <label>
+              <span>海况组</span>
+              <select id="focalWaveGroup">
+                <option value="both">E11-E15 + E21-E25</option>
+                <option value="E11_E15">E11-E15 operational</option>
+                <option value="E21_E25">E21-E25 1-year extreme</option>
+              </select>
+            </label>
+            <label class="check-inline">
+              <input id="focalWavePlot" type="checkbox" checked>
+              <span>运行后聚合时程与 PSD</span>
+            </label>
+            <div class="focal-source-links">
+              <a href="https://wdh.energy.gov/ds/focal/focal.campaign4" target="_blank" rel="noreferrer">实验数据 DOI 10.21947/1972267</a>
+              <a href="https://doi.org/10.3390/machines11090865" target="_blank" rel="noreferrer">Machines 2023, 11, 865</a>
+            </div>
+          </div>
+          <div class="data-table-wrap">
+            <table class="data-table dlc-table">
+              <thead>
+                <tr><th>Wave ID</th><th>海况</th><th>Hs m</th><th>Tp s</th><th>Gamma</th><th>PSD 窗口</th></tr>
+              </thead>
+              <tbody id="focalWaveTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
             <h2>关键参数说明</h2>
           </div>
           <div id="dlcParamHelp" class="param-help-grid"></div>
@@ -232,6 +305,45 @@
             <div id="matrixRows" class="rows"></div>
           </section>
         </div>
+      </section>
+
+      <section id="tab-model" class="tab-page">
+        <section class="panel model-summary-panel">
+          <div class="panel-head">
+            <div>
+              <h2>模型依赖</h2>
+              <p id="modelSummary" class="section-kicker"></p>
+            </div>
+            <input id="modelFileSearch" class="search" placeholder="搜索文件或引用 key">
+          </div>
+          <div id="modelWarnings" class="model-warnings"></div>
+        </section>
+        <div class="model-browser">
+          <section class="panel model-file-panel">
+            <div class="panel-head"><h2>文件</h2></div>
+            <div id="modelFileList" class="model-file-list"></div>
+          </section>
+          <section class="panel model-dependency-panel">
+            <div class="panel-head"><h2 id="modelDependencyTitle">引用关系</h2></div>
+            <div id="modelDependencyList" class="model-dependency-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-outputs" class="tab-page">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>OutList 输出通道</h2>
+              <p id="outlistStatus" class="section-kicker"></p>
+            </div>
+            <div class="panel-actions outlist-actions">
+              <select id="outlistFileSelect" aria-label="输出通道文件"></select>
+              <button id="resetOutlistFileBtn" class="mini-button">恢复当前文件</button>
+            </div>
+          </div>
+          <div id="outlistSections" class="outlist-sections"></div>
+        </section>
       </section>
 
       <section id="tab-hydro" class="tab-page">
@@ -293,6 +405,81 @@
         </section>
       </section>
 
+      <section id="tab-results" class="tab-page">
+        <section class="panel result-command-panel">
+          <div class="panel-head">
+            <div>
+              <h2>结果工作台</h2>
+              <p id="resultCatalogStatus" class="section-kicker">正在读取运行结果</p>
+            </div>
+            <div class="panel-actions">
+              <button id="resultRefreshBtn" class="mini-button">刷新结果</button>
+              <button id="resultAnalyzeBtn" class="button strong">加载分析</button>
+            </div>
+          </div>
+          <div class="result-control-grid">
+            <label><span>场景</span><select id="resultScenarioFilter"></select></label>
+            <label><span>结果搜索</span><input id="resultFileSearch" placeholder="case 或文件名"></label>
+            <label><span>起始时间</span><input id="resultStart" type="number" step="any" placeholder="自动"></label>
+            <label><span>结束时间</span><input id="resultEnd" type="number" step="any" placeholder="自动"></label>
+            <label><span>显示点数</span><input id="resultMaxPoints" type="number" min="200" max="8000" step="100" value="4000"></label>
+          </div>
+        </section>
+
+        <div class="result-picker-grid">
+          <aside class="panel result-files-panel">
+            <div class="panel-head">
+              <div><h2>结果文件</h2><p id="resultFileCount" class="section-kicker"></p></div>
+              <button id="resultSelectPrimaryBtn" class="mini-button">选择主输出</button>
+            </div>
+            <div id="resultFileList" class="result-file-list"></div>
+          </aside>
+          <section class="panel result-channels-panel">
+            <div class="panel-head">
+              <div><h2>分析通道</h2><p id="resultChannelCount" class="section-kicker"></p></div>
+              <div class="panel-actions">
+                <button id="resultSelectCommonBtn" class="mini-button">常用通道</button>
+                <button id="resultClearChannelsBtn" class="mini-button">清空</button>
+              </div>
+            </div>
+            <input id="resultChannelSearch" class="search result-channel-search" placeholder="搜索通道或单位">
+            <div id="resultChannelList" class="result-channel-list"></div>
+          </section>
+        </div>
+
+        <section class="panel result-analysis-panel">
+          <div class="panel-head result-analysis-head">
+            <div class="segmented" aria-label="图表模式">
+              <button id="resultViewTime" class="active" type="button">时程</button>
+              <button id="resultViewPsd" type="button">PSD</button>
+            </div>
+            <div class="panel-actions">
+              <button id="resultExportCsvBtn" class="mini-button" disabled>CSV</button>
+              <button id="resultExportPngBtn" class="mini-button" disabled>PNG</button>
+              <button id="resultPrintBtn" class="mini-button" disabled>打印 / PDF</button>
+            </div>
+          </div>
+          <div id="resultError" class="inline-error" hidden></div>
+          <div id="resultWarnings" class="result-warnings"></div>
+          <div id="resultLoading" class="result-loading" hidden>
+            <span></span><span></span><span></span>
+          </div>
+          <div id="resultCharts" class="result-charts">
+            <div class="empty-state">选择结果文件和通道后加载分析</div>
+          </div>
+        </section>
+
+        <section class="panel result-stats-panel">
+          <div class="panel-head"><h2>统计量</h2><span class="hint">所选时间窗的完整数据统计</span></div>
+          <div class="data-table-wrap">
+            <table class="data-table result-stats-table">
+              <thead><tr><th>Case</th><th>Channel</th><th>Unit</th><th>Min</th><th>Max</th><th>Mean</th><th>Std</th><th>RMS</th><th>|Max|</th><th>Range</th><th>N</th></tr></thead>
+              <tbody id="resultStatsBody"><tr><td colspan="11" class="empty-cell">尚未加载分析</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
       <section id="tab-runlog" class="tab-page">
         <section class="panel" id="jobFiguresPanel">
           <div class="panel-head">
@@ -302,10 +489,15 @@
         </section>
         <section class="panel">
           <div class="panel-head">
-            <h2>运行状态</h2>
+            <div>
+              <h2>运行状态</h2>
+              <p id="runProgressText" class="section-kicker">尚未开始</p>
+            </div>
             <span id="jobStatus" class="status">idle</span>
           </div>
-          <pre id="runLog"></pre>
+          <div class="run-progress" aria-hidden="true"><span id="runProgressBar"></span></div>
+          <div id="workerProgress" class="worker-progress-grid" hidden></div>
+          <pre id="runLog">尚未运行任务。</pre>
         </section>
       </section>
     </section>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import datetime as dt
 import json
 import os
@@ -41,6 +42,7 @@ from driver_c4 import (  # noqa: E402
     apply_edits,
 )
 from hydrodyn_tables import TABLE_COUNT_KEYS, apply_hydrodyn_tables  # noqa: E402
+from openfast_input import apply_outlist_edits  # noqa: E402
 
 
 def slug(text: str) -> str:
@@ -567,7 +569,13 @@ def prepare_openfast_inputs(run_dir: pathlib.Path, compatibility: str, runtime_f
     return fixes
 
 
-def run_openfast(run_dir: pathlib.Path, fst_name: str, timeout: float, openfast_exe: pathlib.Path) -> dict[str, Any]:
+def run_openfast(
+    run_dir: pathlib.Path,
+    fst_name: str,
+    timeout: float,
+    openfast_exe: pathlib.Path,
+    log_prefix: str | None = None,
+) -> dict[str, Any]:
     t0 = time.time()
     proc = subprocess.Popen(
         [str(openfast_exe), fst_name],
@@ -584,7 +592,8 @@ def run_openfast(run_dir: pathlib.Path, fst_name: str, timeout: float, openfast_
     for line in proc.stdout:
         output_parts.append(line)
         tail.append(line)
-        print(line, end="", flush=True)
+        display_line = f"[{log_prefix}] {line}" if log_prefix else line
+        print(display_line, end="", flush=True)
         if time.time() - t0 > timeout:
             timed_out = True
             proc.kill()
@@ -714,8 +723,58 @@ def run_paper_metrics_aggregate(
     return result
 
 
-def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, args) -> dict[str, Any]:
-    case_name = slug(case.get("name") or args.name or f"case_{dt.datetime.now():%Y%m%d_%H%M%S}")
+def run_focal_wave_aggregates(
+    summaries: list[dict[str, Any]],
+    scenario: dict[str, Any],
+    scenario_name: str,
+    scenario_dir: pathlib.Path,
+) -> list[dict[str, Any]]:
+    aggregate_spec = scenario.get("aggregate_plot") or {}
+    if str(aggregate_spec.get("type") or "").lower() != "focal_wave_calibration":
+        return []
+
+    from plot_irregular_wave_experiment import FOCAL_WAVE_GROUPS, create_focal_simulation_aggregate
+
+    configured_groups = aggregate_spec.get("groups") or list(FOCAL_WAVE_GROUPS)
+    mode_frequencies = aggregate_spec.get("mode_frequencies_hz") or None
+    results = []
+    for group_id in configured_groups:
+        if group_id not in FOCAL_WAVE_GROUPS:
+            continue
+        plot_dir = scenario_dir / "comparison"
+        stem = f"focal_{str(group_id).lower()}_simulation"
+        local_png = plot_dir / f"{stem}.png"
+        local_pdf = plot_dir / f"{stem}.pdf"
+        result = create_focal_simulation_aggregate(
+            case_summaries=summaries,
+            scenario_cases=list(scenario.get("cases") or []),
+            group_id=group_id,
+            out_png=local_png,
+            out_pdf=local_pdf,
+            mode_frequencies=mode_frequencies,
+        )
+        if not result.get("ok"):
+            continue
+        web_rel = pathlib.Path("assets") / "run_plots" / slug(scenario_name) / f"{stem}.png"
+        web_path = ROOT / "webui" / web_rel
+        web_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(local_png, web_path)
+        result["web_png"] = str(web_path)
+        result["web_url"] = "/" + web_rel.as_posix() + f"?t={int(time.time())}"
+        results.append(result)
+    return results
+
+
+def run_case(
+    case: dict[str, Any],
+    scenario_name: str,
+    out_root: pathlib.Path,
+    args,
+    case_index: int | None = None,
+    log_prefix: str | None = None,
+) -> dict[str, Any]:
+    fallback_name = f"case_{case_index}" if case_index is not None else f"case_{dt.datetime.now():%Y%m%d_%H%M%S}"
+    case_name = slug(case.get("name") or args.name or fallback_name)
     scenario_dir = out_root / slug(scenario_name)
     run_dir = scenario_dir / case_name
     fst_name = case.get("fst", args.fst)
@@ -726,6 +785,7 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
 
     sets = merge_case_sets(case, args)
     changes = apply_sets(run_dir, sets)
+    outlist_changes = apply_outlist_edits(run_dir, case.get("outlist_edits"))
     matrix_changes = apply_matrix_edits_to_file(run_dir, case, args)
     hydrodyn_table_changes, hydrodyn_table_warnings = apply_hydrodyn_tables_to_file(
         run_dir,
@@ -751,7 +811,13 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
             "out": "",
         }
     elif not args.generate_only:
-        execution = run_openfast(run_dir, fst_name=fst_name, timeout=timeout, openfast_exe=args.openfast_exe)
+        execution = run_openfast(
+            run_dir,
+            fst_name=fst_name,
+            timeout=timeout,
+            openfast_exe=args.openfast_exe,
+            log_prefix=log_prefix,
+        )
     comparison_plot = run_comparison_plot(case, scenario_name, case_name, run_dir, execution, args)
 
     summary = {
@@ -764,6 +830,7 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
         "runtime_format": args.runtime_format,
         "compatibility": args.compatibility,
         "changes": changes,
+        "outlist_changes": outlist_changes,
         "asset_changes": asset_changes,
         "turbsim_input_changes": turbsim_input_changes,
         "preflight_errors": preflight_errors,
@@ -773,6 +840,7 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
         "compatibility_fixes": compatibility_fixes,
         "execution": execution,
         "comparison_plot": comparison_plot,
+        "focal_wave": case.get("focal_wave") or {},
         "ok": bool(execution.get("ok")),
         "notes": case.get("notes", ""),
     }
@@ -780,6 +848,112 @@ def run_case(case: dict[str, Any], scenario_name: str, out_root: pathlib.Path, a
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     summary["summary"] = str(summary_path)
     return summary
+
+
+def execute_cases(
+    cases: list[dict[str, Any]],
+    scenario_name: str,
+    out_root: pathlib.Path,
+    args,
+    report: pathlib.Path,
+) -> tuple[list[dict[str, Any]], bool]:
+    worker_count = min(max(1, int(getattr(args, "workers", 1))), len(cases))
+    case_names = [slug(case.get("name") or args.name or f"case_{index}") for index, case in enumerate(cases, start=1)]
+    duplicates = sorted({name for name in case_names if case_names.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"Case names must be unique for parallel-safe run directories: {', '.join(duplicates)}")
+
+    summary_by_index: dict[int, dict[str, Any]] = {}
+    if getattr(args, "resume", False):
+        scenario_dir = out_root / slug(scenario_name)
+        for index, case_name in enumerate(case_names, start=1):
+            summary_path = scenario_dir / case_name / "scenario_summary.json"
+            if not summary_path.is_file():
+                continue
+            try:
+                saved = json.loads(summary_path.read_text(encoding="utf-8-sig"))
+                execution = saved.get("execution") or {}
+                out_path = pathlib.Path(str(execution.get("out") or ""))
+                if saved.get("ok") and execution.get("ok") and out_path.is_file():
+                    saved["resumed"] = True
+                    saved["summary"] = str(summary_path)
+                    summary_by_index[index] = saved
+                    print(f"[{index}] RESUMED {case_name} -> {saved.get('run_dir', '')}", flush=True)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+        if summary_by_index:
+            ordered = [summary_by_index[index] for index in sorted(summary_by_index)]
+            report.write_text(json.dumps(ordered, indent=2, ensure_ascii=False), encoding="utf-8")
+    all_ok = True
+    stop_scheduling = False
+    next_index = 1
+
+    def run_safely(index: int, case: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        case_name = case_names[index - 1]
+        print(f"[{index}/{len(cases)}] RUNNING {case_name}", flush=True)
+        try:
+            summary = run_case(
+                case,
+                scenario_name=scenario_name,
+                out_root=out_root,
+                args=args,
+                case_index=index,
+                log_prefix=case_name if worker_count > 1 else None,
+            )
+        except Exception as exc:
+            summary = {
+                "scenario": scenario_name,
+                "case": case_name,
+                "ok": False,
+                "error": str(exc),
+            }
+        return index, summary
+
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="openfast-case") as executor:
+        pending = {}
+
+        def submit_available() -> None:
+            nonlocal next_index
+            while not stop_scheduling and next_index <= len(cases) and len(pending) < worker_count:
+                index = next_index
+                if index in summary_by_index:
+                    next_index += 1
+                    continue
+                pending[executor.submit(run_safely, index, cases[index - 1])] = index
+                next_index += 1
+
+        submit_available()
+        while pending:
+            completed, _ = wait(tuple(pending), return_when=FIRST_COMPLETED)
+            for future in sorted(completed, key=lambda item: pending[item]):
+                scheduled_index = pending.pop(future)
+                try:
+                    index, summary = future.result()
+                except Exception as exc:
+                    index = scheduled_index
+                    summary = {
+                        "scenario": scenario_name,
+                        "case": case_names[index - 1],
+                        "ok": False,
+                        "error": str(exc),
+                    }
+                summary_by_index[index] = summary
+                ordered = [summary_by_index[item] for item in sorted(summary_by_index)]
+                report.write_text(json.dumps(ordered, indent=2, ensure_ascii=False), encoding="utf-8")
+                if summary.get("ok"):
+                    print(f"[{index}] OK {summary['case']} -> {summary.get('run_dir', '')}", flush=True)
+                else:
+                    all_ok = False
+                    detail = summary.get("error") or summary.get("execution", {}).get("stdout_tail") or "case failed"
+                    print(f"[{index}] FAILED: {detail}", file=sys.stderr, flush=True)
+                    if not args.continue_on_fail:
+                        stop_scheduling = True
+            submit_available()
+
+    if stop_scheduling and next_index <= len(cases):
+        remaining = len(cases) - next_index + 1
+        print(f"Stopped scheduling after failure; {remaining} case(s) were not started.", file=sys.stderr, flush=True)
+    return [summary_by_index[index] for index in sorted(summary_by_index)], all_ok
 
 
 def load_scenario(path: pathlib.Path) -> dict[str, Any]:
@@ -820,6 +994,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--generate-only", action="store_true")
     parser.add_argument("--plot-comparison", action="store_true", help="After a successful OpenFAST run, generate the comparison figure configured by each case.")
     parser.add_argument("--continue-on-fail", action="store_true")
+    parser.add_argument("--workers", type=int, default=1, help="Number of scenario cases to run concurrently (default: 1).")
+    parser.add_argument("--resume", action="store_true", help="Reuse successful case summaries whose OpenFAST output files still exist.")
     parser.add_argument("--timeout", type=float, default=7200.0)
     parser.add_argument("--tmax", type=float, default=None)
     parser.add_argument("--wind-speed", type=float, default=None)
@@ -879,31 +1055,17 @@ def main(argv=None) -> int:
         print(f"REPORT: {report}", flush=True)
         return 1
 
-    summaries = []
-    all_ok = True
-    for index, case in enumerate(cases, start=1):
-        try:
-            print(f"[{index}/{len(cases)}] RUNNING {slug(case.get('name') or f'case_{index}')}", flush=True)
-            summary = run_case(case, scenario_name=scenario_name, out_root=out_root, args=args)
-            summaries.append(summary)
-            report.write_text(json.dumps(summaries, indent=2, ensure_ascii=False), encoding="utf-8")
-            print(f"[{index}] {'OK' if summary['ok'] else 'FAILED'} {summary['case']} -> {summary['run_dir']}", flush=True)
-            all_ok = all_ok and summary["ok"]
-            if not summary["ok"] and not args.continue_on_fail:
-                break
-        except Exception as exc:
-            summary = {
-                "scenario": scenario_name,
-                "case": slug(case.get("name") or f"case_{index}"),
-                "ok": False,
-                "error": str(exc),
-            }
-            summaries.append(summary)
-            report.write_text(json.dumps(summaries, indent=2, ensure_ascii=False), encoding="utf-8")
-            all_ok = False
-            print(f"[{index}] FAILED: {exc}", file=sys.stderr, flush=True)
-            if not args.continue_on_fail:
-                break
+    if args.workers < 1:
+        print("--workers must be at least 1.", file=sys.stderr, flush=True)
+        return 1
+    try:
+        summaries, all_ok = execute_cases(cases, scenario_name, out_root, args, report)
+    except Exception as exc:
+        summaries = [{"scenario": scenario_name, "case": "scenario_setup", "ok": False, "error": str(exc)}]
+        report.write_text(json.dumps(summaries, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"Scenario setup failed: {exc}", file=sys.stderr, flush=True)
+        print(f"REPORT: {report}", flush=True)
+        return 1
 
     if getattr(args, "plot_comparison", False) and not getattr(args, "generate_only", False):
         try:
@@ -922,6 +1084,22 @@ def main(argv=None) -> int:
                 )
         except Exception as exc:
             print(f"[scenario] paper metrics aggregate failed: {exc}", file=sys.stderr, flush=True)
+        try:
+            focal_aggregates = run_focal_wave_aggregates(summaries, scenario, scenario_name, scenario_dir)
+            for aggregate in focal_aggregates:
+                summaries.append(
+                    {
+                        "scenario": scenario_name,
+                        "case": f"{aggregate.get('group', 'focal_wave')}_wave_calibration",
+                        "run_dir": str(scenario_dir),
+                        "ok": True,
+                        "execution": {"ok": True, "skipped": True, "reason": "aggregate_plot"},
+                        "comparison_plot": aggregate,
+                        "notes": "Five-seed FOCAL wave-elevation time history and PSD aggregate.",
+                    }
+                )
+        except Exception as exc:
+            print(f"[scenario] FOCAL wave aggregate failed: {exc}", file=sys.stderr, flush=True)
 
     report.write_text(json.dumps(summaries, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"REPORT: {report}", flush=True)

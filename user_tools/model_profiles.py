@@ -9,6 +9,8 @@ import re
 import subprocess
 from typing import Any
 
+from openfast_input import discover_model_dependencies, structure_file_ids
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "model_profiles.json"
@@ -133,17 +135,15 @@ def quoted_value(line: str) -> str | None:
     return value
 
 
-def input_files_for_model(model: dict[str, Any]) -> list[str]:
-    files: list[str] = []
-    for name in [model.get("fst"), *(model.get("inputFiles") or [])]:
-        if name and name not in files:
-            files.append(str(name))
+def dependency_structure_for_model(model: dict[str, Any]) -> dict[str, Any]:
     model_path = pathlib.Path(model["path"])
-    fst_name = model.get("fst")
-    fst_path = model_path / str(fst_name or "")
-    if fst_path.is_file():
-        for line in fst_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            value = quoted_value(line)
-            if value and value not in files and (model_path / value).is_file():
-                files.append(value)
-    return files
+    return discover_model_dependencies(
+        model_path,
+        str(model.get("fst") or ""),
+        configured_files=model.get("inputFiles") or [],
+    )
+
+
+def input_files_for_model(model: dict[str, Any], structure: dict[str, Any] | None = None) -> list[str]:
+    structure = structure or dependency_structure_for_model(model)
+    return structure_file_ids(structure)

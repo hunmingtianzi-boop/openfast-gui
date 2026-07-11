@@ -9,6 +9,19 @@ const state = {
   pollTimer: null,
   jobRunning: false,
   plotComparison: localStorage.getItem('openfastGui.plotComparison'),
+  parallelWorkers: Number(localStorage.getItem('openfastGui.parallelWorkers') || 1),
+  activeTab: localStorage.getItem('openfastGui.activeTab') || 'compose',
+  scenarioQuery: '',
+  selectedModelFile: '',
+  selectedOutlistFile: '',
+  resultsCatalog: null,
+  selectedResultFiles: [],
+  selectedResultChannels: [],
+  resultData: null,
+  resultView: 'time',
+  resultLoading: false,
+  resultError: '',
+  resultScenarioFilter: 'all',
   jsonDirty: false
 };
 
@@ -32,6 +45,33 @@ const DLC11_ROWS = [
   { wind: 22, hs: 4.03, tp: 8.99, gamma: 1.82 },
   { wind: 24, hs: 4.52, tp: 9.45, gamma: 1.89 }
 ];
+const FOCAL_TABLE24_ROWS = [
+  {
+    id: 'E11_E15', waveStart: 11, waveEnd: 15, seaState: 'Operational / DLC 1.2',
+    hs: 3.1, tp: 8.96, gamma: 1.80, duration: 9294.4,
+    referenceUrl: '/assets/irregular_wave/focal_e11_e15_calibration.png'
+  },
+  {
+    id: 'E21_E25', waveStart: 21, waveEnd: 25, seaState: '1-year extreme / DLC 1.6',
+    hs: 8.1, tp: 12.8, gamma: 2.75, duration: 9754.4,
+    referenceUrl: '/assets/irregular_wave/focal_e21_e25_calibration.png'
+  }
+];
+const FOCAL_MODE_FREQUENCIES = {
+  Surge: 1 / 80.79,
+  Pitch: 1 / 30.79,
+  Tower: 0.458
+};
+const RESULT_COMMON_CHANNELS = [
+  ['Wave1Elev', 'WaveElev', 'WaveElev1'],
+  ['PtfmSurge', 'Surge'],
+  ['PtfmHeave', 'Heave'],
+  ['PtfmPitch', 'Pitch'],
+  ['RotSpeed', 'GenSpeed'],
+  ['GenPwr', 'GenTq'],
+  ['FairTen1', 'FAIRTEN1', 'FairHTen1']
+];
+const RESULT_COLORS = ['#14756e', '#b34a3c', '#2f6f9f', '#9a6a18', '#5b6f3a', '#8b5a83', '#4d5967', '#16839a'];
 const DLC_PARAM_HELP = [
   ['WindType', 'InflowWind', '1 是稳态风，3 是 TurbSim .bts 全场湍流风。'],
   ['HWindSpeed', 'InflowWind', '稳态风速；学习模式直接用它控制入流。'],
@@ -197,11 +237,16 @@ function renderAll() {
   renderRunOptions();
   renderReferenceFigures();
   renderDlcLearning();
+  renderFocalWaveReproduction();
   renderModuleSwitches();
   renderAdvancedRows();
+  renderModelStructure();
+  renderOutlistEditor();
   renderHydroTables();
   renderCatalog();
+  renderResultsWorkspace();
   renderJson();
+  setActiveTab(state.activeTab, false);
 }
 
 function renderReferenceFigures() {
@@ -244,6 +289,493 @@ function plotComparisonEnabled() {
 function renderRunOptions() {
   const plot = $('plotComparison');
   if (plot) plot.checked = plotComparisonEnabled();
+  const workers = $('parallelWorkers');
+  if (workers) workers.value = String(Math.min(4, Math.max(1, state.parallelWorkers || 1)));
+}
+
+function resultScenarioSlug(value) {
+  return String(value || '').trim().replace(/[^0-9A-Za-z_.-]+/g, '_').replace(/^_+|_+$/g, '') || 'scenario';
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function formatResultNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  const magnitude = Math.abs(number);
+  if (magnitude !== 0 && (magnitude >= 1e5 || magnitude < 1e-3)) return number.toExponential(4);
+  return Number(number.toPrecision(6)).toString();
+}
+
+function resultFiles() {
+  return state.resultsCatalog?.files || [];
+}
+
+function selectedResultRows() {
+  const selected = new Set(state.selectedResultFiles);
+  return resultFiles().filter(row => selected.has(row.id));
+}
+
+function filteredResultRows() {
+  const query = ($('resultFileSearch')?.value || '').trim().toLowerCase();
+  return resultFiles().filter(row => {
+    if (state.resultScenarioFilter !== 'all' && row.scenario !== state.resultScenarioFilter) return false;
+    return !query || [row.scenario, row.case, row.file, row.label].some(value => String(value || '').toLowerCase().includes(query));
+  });
+}
+
+function availableResultChannels() {
+  const rows = selectedResultRows();
+  const byName = new Map();
+  for (const row of rows) {
+    for (const channel of row.channels || []) {
+      if (!channel.name || channel.index === 0 || channel.name === row.independent?.name) continue;
+      const key = channel.name.toLowerCase();
+      if (!byName.has(key)) byName.set(key, { name: channel.name, units: new Set(), files: 0 });
+      const item = byName.get(key);
+      if (channel.unit) item.units.add(channel.unit);
+      item.files += 1;
+    }
+  }
+  return [...byName.values()]
+    .map(row => ({ name: row.name, unit: [...row.units].join(' / '), files: row.files }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+function invalidateResultAnalysis() {
+  state.resultData = null;
+  state.resultError = '';
+}
+
+function selectCommonResultChannels(render = true) {
+  const available = availableResultChannels();
+  const lookup = new Map(available.map(row => [row.name.toLowerCase(), row.name]));
+  const selected = [];
+  for (const aliases of RESULT_COMMON_CHANNELS) {
+    const found = aliases.map(alias => lookup.get(alias.toLowerCase())).find(Boolean);
+    if (found && !selected.includes(found)) selected.push(found);
+    if (selected.length >= 8) break;
+  }
+  if (!selected.length) selected.push(...available.slice(0, 4).map(row => row.name));
+  state.selectedResultChannels = selected;
+  invalidateResultAnalysis();
+  if (render) renderResultsWorkspace();
+}
+
+function selectPrimaryResults() {
+  const candidates = filteredResultRows().filter(row => row.primary && !row.error).slice(0, 6);
+  const fallback = filteredResultRows().filter(row => !row.error).slice(0, 1);
+  state.selectedResultFiles = (candidates.length ? candidates : fallback).map(row => row.id);
+  selectCommonResultChannels(false);
+  renderResultsWorkspace();
+}
+
+async function loadResultsCatalog({ preserve = true, preferScenario = false } = {}) {
+  try {
+    const payload = await api('/api/results');
+    state.resultsCatalog = payload;
+    const valid = new Set(resultFiles().map(row => row.id));
+    state.selectedResultFiles = preserve ? state.selectedResultFiles.filter(id => valid.has(id)) : [];
+    const preferredScenario = resultScenarioSlug(state.scenario.name);
+    if (preferScenario && resultFiles().some(row => row.scenario === preferredScenario)) {
+      state.resultScenarioFilter = preferredScenario;
+    } else if (!new Set(resultFiles().map(row => row.scenario)).has(state.resultScenarioFilter)) {
+      state.resultScenarioFilter = 'all';
+    }
+    if (!state.selectedResultFiles.length) selectPrimaryResults();
+    else {
+      const available = new Set(availableResultChannels().map(row => row.name));
+      state.selectedResultChannels = state.selectedResultChannels.filter(name => available.has(name));
+      if (!state.selectedResultChannels.length) selectCommonResultChannels(false);
+    }
+    state.resultError = '';
+  } catch (error) {
+    state.resultsCatalog = { summary: { scenarios: 0, cases: 0, files: 0 }, files: [] };
+    state.resultError = error.message;
+  }
+  renderResultsWorkspace();
+}
+
+function renderResultFileList() {
+  const wrap = $('resultFileList');
+  if (!wrap) return;
+  const rows = filteredResultRows();
+  const selected = new Set(state.selectedResultFiles);
+  $('resultFileCount').textContent = `${selected.size} / 6 已选 · ${rows.length} 可见`;
+  wrap.innerHTML = '';
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty-state">没有匹配的结果文件</div>';
+    return;
+  }
+  for (const row of rows) {
+    const label = document.createElement('label');
+    label.className = `result-file-item ${selected.has(row.id) ? 'selected' : ''} ${row.error ? 'invalid' : ''}`;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selected.has(row.id);
+    checkbox.disabled = Boolean(row.error);
+    checkbox.onchange = () => {
+      if (checkbox.checked && state.selectedResultFiles.length >= 6) {
+        checkbox.checked = false;
+        toast('最多同时比较 6 个结果文件');
+        return;
+      }
+      if (checkbox.checked) state.selectedResultFiles.push(row.id);
+      else state.selectedResultFiles = state.selectedResultFiles.filter(id => id !== row.id);
+      const available = new Set(availableResultChannels().map(channel => channel.name));
+      state.selectedResultChannels = state.selectedResultChannels.filter(name => available.has(name));
+      if (!state.selectedResultChannels.length) selectCommonResultChannels(false);
+      invalidateResultAnalysis();
+      renderResultsWorkspace();
+    };
+    const copy = document.createElement('span');
+    copy.className = 'result-file-copy';
+    const duration = Number.isFinite(Number(row.timeEnd)) && Number.isFinite(Number(row.timeStart)) ? `${formatResultNumber(row.timeEnd - row.timeStart)} s` : 'duration —';
+    copy.innerHTML = `<strong>${escapeHtml(row.case)} / ${escapeHtml(row.file)}</strong><span>${escapeHtml(row.scenario)} · ${row.format || 'unknown'} · ${formatBytes(row.size)}</span><small>${row.channelCount || 0} channels · ${duration}${row.primary ? ' · primary' : ''}${row.error ? ` · ${escapeHtml(row.error)}` : ''}</small>`;
+    label.append(checkbox, copy);
+    wrap.appendChild(label);
+  }
+}
+
+function renderResultChannelList() {
+  const wrap = $('resultChannelList');
+  if (!wrap) return;
+  const query = ($('resultChannelSearch')?.value || '').trim().toLowerCase();
+  const rows = availableResultChannels().filter(row => !query || `${row.name} ${row.unit}`.toLowerCase().includes(query));
+  const selected = new Set(state.selectedResultChannels);
+  $('resultChannelCount').textContent = `${selected.size} / 8 已选 · ${availableResultChannels().length} 可用`;
+  wrap.innerHTML = '';
+  if (!selectedResultRows().length) {
+    wrap.innerHTML = '<div class="empty-state">先选择结果文件</div>';
+    return;
+  }
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty-state">没有匹配的通道</div>';
+    return;
+  }
+  for (const row of rows) {
+    const label = document.createElement('label');
+    label.className = `result-channel-item ${selected.has(row.name) ? 'selected' : ''}`;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selected.has(row.name);
+    checkbox.onchange = () => {
+      if (checkbox.checked && state.selectedResultChannels.length >= 8) {
+        checkbox.checked = false;
+        toast('最多同时分析 8 个通道');
+        return;
+      }
+      if (checkbox.checked) state.selectedResultChannels.push(row.name);
+      else state.selectedResultChannels = state.selectedResultChannels.filter(name => name !== row.name);
+      invalidateResultAnalysis();
+      renderResultsWorkspace();
+    };
+    const name = document.createElement('span');
+    name.innerHTML = `<strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.unit || '—')} · ${row.files}/${selectedResultRows().length} files</small>`;
+    label.append(checkbox, name);
+    wrap.appendChild(label);
+  }
+}
+
+function renderResultsWorkspace() {
+  if (!$('resultCatalogStatus')) return;
+  const summary = state.resultsCatalog?.summary || { scenarios: 0, cases: 0, files: 0 };
+  $('resultCatalogStatus').textContent = `${summary.scenarios || 0} scenarios · ${summary.cases || 0} cases · ${summary.files || 0} files`;
+  const scenarios = [...new Set(resultFiles().map(row => row.scenario))].sort((a, b) => a.localeCompare(b));
+  const scenarioSelect = $('resultScenarioFilter');
+  scenarioSelect.innerHTML = ['<option value="all">全部场景</option>', ...scenarios.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)].join('');
+  scenarioSelect.value = scenarios.includes(state.resultScenarioFilter) ? state.resultScenarioFilter : 'all';
+  renderResultFileList();
+  renderResultChannelList();
+  renderResultAnalysis();
+}
+
+async function analyzeSelectedResults() {
+  if (!state.selectedResultFiles.length) {
+    state.resultError = '至少选择一个结果文件。';
+    renderResultAnalysis();
+    return;
+  }
+  if (!state.selectedResultChannels.length) {
+    state.resultError = '至少选择一个分析通道。';
+    renderResultAnalysis();
+    return;
+  }
+  const startText = $('resultStart').value.trim();
+  const endText = $('resultEnd').value.trim();
+  state.resultLoading = true;
+  state.resultError = '';
+  renderResultAnalysis();
+  try {
+    state.resultData = await api('/api/results/analyze', {
+      method: 'POST',
+      body: JSON.stringify({
+        files: state.selectedResultFiles,
+        channels: state.selectedResultChannels,
+        start: startText === '' ? null : Number(startText),
+        end: endText === '' ? null : Number(endText),
+        maxPoints: Math.min(8000, Math.max(200, Number($('resultMaxPoints').value) || 4000)),
+        includePsd: true
+      })
+    });
+  } catch (error) {
+    state.resultData = null;
+    state.resultError = error.message;
+  } finally {
+    state.resultLoading = false;
+    renderResultAnalysis();
+  }
+}
+
+function resultSeriesGroups(mode) {
+  const groups = new Map();
+  for (const result of state.resultData?.cases || []) {
+    if (mode === 'psd') {
+      for (const row of result.psd || []) {
+        const unit = row.unit || 'PSD';
+        if (!groups.has(unit)) groups.set(unit, []);
+        groups.get(unit).push({ label: `${result.id} · ${row.name}`, x: row.frequency, y: row.values, unit });
+      }
+    } else {
+      const x = result.independent?.values || [];
+      for (const row of result.series || []) {
+        const unit = row.unit || '—';
+        if (!groups.has(unit)) groups.set(unit, []);
+        groups.get(unit).push({ label: `${result.id} · ${row.name}`, x, y: row.values, unit, xUnit: result.independent?.unit || '' });
+      }
+    }
+  }
+  return groups;
+}
+
+function resultColor(label) {
+  let hash = 0;
+  for (const character of label) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return RESULT_COLORS[Math.abs(hash) % RESULT_COLORS.length];
+}
+
+function axisLabel(value) {
+  const number = Number(value);
+  const magnitude = Math.abs(number);
+  if (magnitude !== 0 && (magnitude >= 1e4 || magnitude < 1e-2)) return number.toExponential(2);
+  return Number(number.toPrecision(4)).toString();
+}
+
+function drawResultCanvas(canvas, entries, mode, unit) {
+  const width = Math.max(620, Math.round(canvas.getBoundingClientRect().width || 900));
+  const height = 330;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const context = canvas.getContext('2d');
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  const margin = { left: 76, right: 22, top: 20, bottom: 48 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const points = [];
+  for (const entry of entries) {
+    for (let index = 0; index < Math.min(entry.x.length, entry.y.length); index += 1) {
+      const x = Number(entry.x[index]);
+      const rawY = Number(entry.y[index]);
+      const y = mode === 'psd' ? Math.log10(rawY) : rawY;
+      if (Number.isFinite(x) && Number.isFinite(y)) points.push([x, y]);
+    }
+  }
+  if (!points.length) return;
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const [x, y] of points) {
+    xMin = Math.min(xMin, x);
+    xMax = Math.max(xMax, x);
+    yMin = Math.min(yMin, y);
+    yMax = Math.max(yMax, y);
+  }
+  if (xMin === xMax) { xMin -= 0.5; xMax += 0.5; }
+  if (yMin === yMax) { yMin -= 0.5; yMax += 0.5; }
+  const yPad = (yMax - yMin) * 0.06;
+  yMin -= yPad;
+  yMax += yPad;
+  const px = value => margin.left + (value - xMin) / (xMax - xMin) * plotWidth;
+  const py = value => margin.top + plotHeight - (value - yMin) / (yMax - yMin) * plotHeight;
+
+  context.strokeStyle = '#dfe7e5';
+  context.lineWidth = 1;
+  context.fillStyle = '#64716e';
+  context.font = '10px Cascadia Mono, Consolas, monospace';
+  for (let tick = 0; tick <= 5; tick += 1) {
+    const xValue = xMin + (xMax - xMin) * tick / 5;
+    const x = px(xValue);
+    context.beginPath(); context.moveTo(x, margin.top); context.lineTo(x, margin.top + plotHeight); context.stroke();
+    context.textAlign = 'center'; context.fillText(axisLabel(xValue), x, height - 25);
+    const yValue = yMin + (yMax - yMin) * tick / 5;
+    const y = py(yValue);
+    context.beginPath(); context.moveTo(margin.left, y); context.lineTo(margin.left + plotWidth, y); context.stroke();
+    context.textAlign = 'right'; context.fillText(mode === 'psd' ? `10^${axisLabel(yValue)}` : axisLabel(yValue), margin.left - 8, y + 3);
+  }
+  context.strokeStyle = '#80908c';
+  context.beginPath(); context.moveTo(margin.left, margin.top); context.lineTo(margin.left, margin.top + plotHeight); context.lineTo(margin.left + plotWidth, margin.top + plotHeight); context.stroke();
+
+  for (const entry of entries) {
+    context.strokeStyle = resultColor(entry.label);
+    context.lineWidth = 1.35;
+    context.beginPath();
+    let started = false;
+    for (let index = 0; index < Math.min(entry.x.length, entry.y.length); index += 1) {
+      const xValue = Number(entry.x[index]);
+      const rawY = Number(entry.y[index]);
+      const yValue = mode === 'psd' ? Math.log10(rawY) : rawY;
+      if (!Number.isFinite(xValue) || !Number.isFinite(yValue)) { started = false; continue; }
+      const x = px(xValue);
+      const y = py(yValue);
+      if (!started) { context.moveTo(x, y); started = true; }
+      else context.lineTo(x, y);
+    }
+    context.stroke();
+  }
+
+  context.fillStyle = '#47534f';
+  context.textAlign = 'center';
+  context.font = '11px Segoe UI, Arial, sans-serif';
+  context.fillText(mode === 'psd' ? 'Frequency (Hz)' : `${state.resultData?.cases?.[0]?.independent?.name || 'Time'} (${entries[0]?.xUnit || 's'})`, margin.left + plotWidth / 2, height - 6);
+  context.save();
+  context.translate(14, margin.top + plotHeight / 2);
+  context.rotate(-Math.PI / 2);
+  context.fillText(mode === 'psd' ? `PSD (${unit}, log scale)` : unit, 0, 0);
+  context.restore();
+}
+
+function renderResultCharts() {
+  const wrap = $('resultCharts');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  if (!state.resultData) {
+    wrap.innerHTML = '<div class="empty-state">选择结果文件和通道后加载分析</div>';
+    return;
+  }
+  const groups = resultSeriesGroups(state.resultView);
+  if (!groups.size) {
+    wrap.innerHTML = `<div class="empty-state">${state.resultView === 'psd' ? '所选数据不足以计算 PSD' : '没有可绘制的数据'}</div>`;
+    return;
+  }
+  for (const [unit, entries] of groups) {
+    const figure = document.createElement('figure');
+    figure.className = 'result-chart-block';
+    const caption = document.createElement('figcaption');
+    caption.innerHTML = `<strong>${state.resultView === 'psd' ? '功率谱密度' : '时程'} · ${escapeHtml(unit)}</strong><span>${entries.length} traces</span>`;
+    const canvas = document.createElement('canvas');
+    canvas.setAttribute('aria-label', `${state.resultView} ${unit} chart`);
+    const legend = document.createElement('div');
+    legend.className = 'result-chart-legend';
+    legend.innerHTML = entries.map(entry => `<span><i style="background:${resultColor(entry.label)}"></i>${escapeHtml(entry.label)}</span>`).join('');
+    figure.append(caption, canvas, legend);
+    wrap.appendChild(figure);
+    requestAnimationFrame(() => drawResultCanvas(canvas, entries, state.resultView, unit));
+  }
+}
+
+function renderResultStats() {
+  const body = $('resultStatsBody');
+  if (!body) return;
+  body.innerHTML = '';
+  if (!state.resultData) {
+    body.innerHTML = '<tr><td colspan="11" class="empty-cell">尚未加载分析</td></tr>';
+    return;
+  }
+  for (const result of state.resultData.cases || []) {
+    for (const row of result.statistics || []) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${escapeHtml(result.id)}</td><td><strong>${escapeHtml(row.name)}</strong></td><td>${escapeHtml(row.unit || '—')}</td><td>${formatResultNumber(row.min)}</td><td>${formatResultNumber(row.max)}</td><td>${formatResultNumber(row.mean)}</td><td>${formatResultNumber(row.std)}</td><td>${formatResultNumber(row.rms)}</td><td>${formatResultNumber(row.absMax)}</td><td>${formatResultNumber(row.range)}</td><td>${row.count ?? 0}</td>`;
+      body.appendChild(tr);
+    }
+  }
+  if (!body.children.length) body.innerHTML = '<tr><td colspan="11" class="empty-cell">没有统计数据</td></tr>';
+}
+
+function renderResultAnalysis() {
+  if (!$('resultAnalysisPanel') && !$('resultCharts')) return;
+  const error = $('resultError');
+  error.hidden = !state.resultError;
+  error.textContent = state.resultError || '';
+  $('resultWarnings').innerHTML = (state.resultData?.warnings || []).map(value => `<div>${escapeHtml(value)}</div>`).join('');
+  $('resultLoading').hidden = !state.resultLoading;
+  $('resultAnalyzeBtn').disabled = state.resultLoading;
+  $('resultViewTime').classList.toggle('active', state.resultView === 'time');
+  $('resultViewPsd').classList.toggle('active', state.resultView === 'psd');
+  for (const id of ['resultExportCsvBtn', 'resultExportPngBtn', 'resultPrintBtn']) $(id).disabled = !state.resultData || state.resultLoading;
+  if (!state.resultLoading) {
+    renderResultCharts();
+    renderResultStats();
+  }
+}
+
+function setResultView(mode) {
+  state.resultView = mode === 'psd' ? 'psd' : 'time';
+  renderResultAnalysis();
+}
+
+function downloadResultBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportResultsCsv() {
+  if (!state.resultData) return;
+  const rows = [['case', 'independent', 'independent_unit', 'channel', 'unit', 'value']];
+  for (const result of state.resultData.cases || []) {
+    const independent = result.independent || {};
+    for (const series of result.series || []) {
+      for (let index = 0; index < Math.min(independent.values?.length || 0, series.values?.length || 0); index += 1) {
+        rows.push([result.id, independent.values[index], independent.unit || '', series.name, series.unit || '', series.values[index]]);
+      }
+    }
+  }
+  const csv = rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\r\n');
+  downloadResultBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `openfast-results-${state.resultView}.csv`);
+}
+
+function exportResultsPng() {
+  const canvases = [...document.querySelectorAll('#resultCharts canvas')];
+  if (!canvases.length) return;
+  const gap = 20;
+  const width = Math.max(...canvases.map(canvas => canvas.width));
+  const height = canvases.reduce((sum, canvas) => sum + canvas.height, 0) + gap * (canvases.length - 1);
+  const merged = document.createElement('canvas');
+  merged.width = width;
+  merged.height = height;
+  const context = merged.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  let top = 0;
+  for (const canvas of canvases) {
+    context.drawImage(canvas, 0, top);
+    top += canvas.height + gap;
+  }
+  merged.toBlob(blob => { if (blob) downloadResultBlob(blob, `openfast-results-${state.resultView}.png`); }, 'image/png');
+}
+
+function printResults() {
+  document.body.classList.add('print-results');
+  const cleanup = () => document.body.classList.remove('print-results');
+  window.addEventListener('afterprint', cleanup, { once: true });
+  window.print();
+  setTimeout(cleanup, 1000);
 }
 
 function renderJobFigures(job = {}) {
@@ -267,6 +799,102 @@ function renderJobFigures(job = {}) {
     card.appendChild(caption);
     wrap.appendChild(card);
   }
+}
+
+function formatElapsed(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function latestOpenFastProgress(output = '') {
+  const pattern = /(?:\[([^\]]+)\]\s*)?Time:\s*([0-9.]+)\s+of\s+([0-9.]+)\s+seconds/g;
+  let latest = null;
+  for (const match of output.matchAll(pattern)) {
+    const current = Number(match[2]);
+    const total = Number(match[3]);
+    if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) continue;
+    latest = {
+      caseName: match[1] || '',
+      current,
+      total,
+      percent: Math.min(100, Math.max(0, 100 * current / total))
+    };
+  }
+  return latest;
+}
+
+function recentWorkerProgress(output = '', limit = 4) {
+  const pattern = /(?:\[([^\]]+)\]\s*)?Time:\s*([0-9.]+)\s+of\s+([0-9.]+)\s+seconds/g;
+  const byCase = new Map();
+  for (const match of output.matchAll(pattern)) {
+    const caseName = match[1] || 'OpenFAST';
+    const current = Number(match[2]);
+    const total = Number(match[3]);
+    if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) continue;
+    const row = { caseName, current, total, percent: Math.min(100, Math.max(0, 100 * current / total)) };
+    byCase.delete(caseName);
+    byCase.set(caseName, row);
+  }
+  return [...byCase.values()].slice(-limit);
+}
+
+function renderJobState(job = { status: 'idle' }) {
+  const status = job.status || 'idle';
+  const active = ['queued', 'running'].includes(status);
+  const statusLabels = { idle: '空闲', queued: '排队中', running: '运行中', done: '已完成', failed: '失败' };
+  const label = statusLabels[status] || status;
+  const elapsed = job.elapsed_s !== undefined ? formatElapsed(job.elapsed_s) : '';
+  const progress = latestOpenFastProgress(job.output || '');
+  const workers = Number(job.workers || 1);
+  if (job.workers && $('parallelWorkers')) {
+    state.parallelWorkers = Math.min(4, Math.max(1, workers));
+    $('parallelWorkers').value = String(state.parallelWorkers);
+    localStorage.setItem('openfastGui.parallelWorkers', String(state.parallelWorkers));
+  }
+  const progressCurrent = progress ? String(Number(progress.current.toFixed(1))) : '';
+  const progressTotal = progress ? String(Number(progress.total.toFixed(1))) : '';
+  const concurrencyLabel = workers > 1 ? ` · ${workers} 并行` : '';
+  const progressLabel = progress
+    ? `${progress.caseName ? `${progress.caseName} · ` : ''}${progressCurrent} / ${progressTotal} s · ${progress.percent.toFixed(1)}%`
+    : active && workers > 1
+      ? `${workers} 个 case 并行运行`
+      : job.scenarioFile || (status === 'idle' ? '尚未运行' : '等待结果');
+
+  const topButton = $('jobStatusButton');
+  if (topButton) topButton.dataset.status = status;
+  if ($('topJobStatus')) $('topJobStatus').textContent = `${label}${concurrencyLabel}${elapsed ? ` · ${elapsed}` : ''}`;
+  if ($('topJobProgress')) $('topJobProgress').textContent = progressLabel;
+  if ($('jobStatus')) {
+    $('jobStatus').textContent = `${status}${workers > 1 ? ` · ${workers} workers` : ''}${elapsed ? ` · ${elapsed}` : ''}${job.returncode !== undefined ? ` · code ${job.returncode}` : ''}`;
+    $('jobStatus').dataset.status = status;
+  }
+  if ($('runProgressText')) $('runProgressText').textContent = progressLabel;
+  if ($('runProgressBar')) $('runProgressBar').style.width = `${progress ? progress.percent : status === 'done' ? 100 : 0}%`;
+  const workerWrap = $('workerProgress');
+  if (workerWrap) {
+    const rows = workers > 1 ? recentWorkerProgress(job.output || '', workers) : [];
+    workerWrap.hidden = workers <= 1 || (!active && !rows.length);
+    if (!workerWrap.hidden) {
+      workerWrap.innerHTML = rows.length
+        ? rows.map(row => {
+          const current = String(Number(row.current.toFixed(1)));
+          const total = String(Number(row.total.toFixed(1)));
+          return `<div class="worker-progress-item"><div class="worker-progress-head"><strong>${escapeHtml(row.caseName)}</strong><span>${current} / ${total} s · ${row.percent.toFixed(1)}%</span></div><div class="worker-progress-track"><span style="width:${row.percent}%"></span></div></div>`;
+        }).join('')
+        : Array.from({ length: workers }, (_, index) => `<div class="worker-progress-item waiting"><div class="worker-progress-head"><strong>Worker ${index + 1}</strong><span>初始化中</span></div><div class="worker-progress-track"><span></span></div></div>`).join('');
+    }
+  }
+  if ($('runLog')) {
+    $('runLog').textContent = job.output || (active ? '等待 OpenFAST 输出...' : status === 'idle' ? '尚未运行任务。' : '任务没有控制台输出。');
+    if (active) $('runLog').scrollTop = $('runLog').scrollHeight;
+  }
+  state.jobRunning = active;
+  setJobButtons(!active);
 }
 
 function updatePlotComparisonPreference() {
@@ -329,10 +957,19 @@ function updatePresetDescription() {
 function renderScenarioList() {
   const wrap = $('scenarioList');
   wrap.innerHTML = '';
-  for (const item of state.scenarioList || []) {
+  const query = state.scenarioQuery.trim().toLowerCase();
+  const items = (state.scenarioList || []).filter(item => {
+    if (!query) return true;
+    return [item.name, item.file, item.description].some(value => String(value || '').toLowerCase().includes(query));
+  });
+  if (!items.length) {
+    wrap.innerHTML = '<div class="empty-state">没有匹配的场景</div>';
+    return;
+  }
+  for (const item of items) {
     const div = document.createElement('div');
     div.className = `scenario-item ${item.file === state.scenarioFile ? 'active' : ''}`;
-    div.innerHTML = `<div class="item-title"><span>${item.name}</span><span class="badge">${item.cases}</span></div><div class="item-meta">${item.file}<br>${item.description || ''}</div>`;
+    div.innerHTML = `<div class="item-title"><span>${escapeHtml(item.name)}</span><span class="badge">${item.cases}</span></div><div class="item-file">${escapeHtml(item.file)}</div><div class="item-meta">${escapeHtml(item.description || '')}</div>`;
     div.onclick = () => loadScenario(item.file);
     wrap.appendChild(div);
   }
@@ -344,7 +981,7 @@ function renderInterfaces() {
   for (const mode of state.meta.interfaceModes) {
     const div = document.createElement('div');
     div.className = 'mode-item';
-    div.innerHTML = `<div class="item-title"><span>${mode.name}</span><span class="badge ${mode.status}">${mode.status}</span></div><div class="item-meta">${mode.entry}<br>${mode.scope}</div>`;
+    div.innerHTML = `<div class="item-title"><span>${escapeHtml(mode.name)}</span><span class="badge ${escapeHtml(mode.status)}">${escapeHtml(mode.status)}</span></div><div class="item-meta">${escapeHtml(mode.entry)}<br>${escapeHtml(mode.scope)}</div>`;
     wrap.appendChild(div);
   }
 }
@@ -374,6 +1011,44 @@ function dlcSelectedRow() {
 function isIeaModelSelected() {
   const files = activeFiles();
   return state.selectedModelId === 'iea_15_240_umaine' || String(files.fst || '').includes('IEA-15-240');
+}
+
+function isFocalModelSelected() {
+  const files = activeFiles();
+  return state.selectedModelId === 'focal_c4' || String(files.fst || '').includes('FOCAL_C4');
+}
+
+function isFocalRuntimeSelected() {
+  return state.meta?.runtimeProfile?.runtimeFormat === 'v4';
+}
+
+function focalSelectedRows() {
+  const selected = $('focalWaveGroup')?.value || 'both';
+  return selected === 'both' ? FOCAL_TABLE24_ROWS : FOCAL_TABLE24_ROWS.filter(row => row.id === selected);
+}
+
+function renderFocalWaveReproduction() {
+  const body = $('focalWaveTableBody');
+  if (!body) return;
+  const selectedIds = new Set(focalSelectedRows().map(row => row.id));
+  body.innerHTML = '';
+  for (const row of FOCAL_TABLE24_ROWS) {
+    const tr = document.createElement('tr');
+    tr.className = selectedIds.has(row.id) ? 'selected' : '';
+    tr.innerHTML = `<td>E${row.waveStart}-E${row.waveEnd}</td><td>${row.seaState}</td><td>${row.hs.toFixed(1)}</td><td>${row.tp}</td><td>${row.gamma.toFixed(2)}</td><td>2000-8000 s</td>`;
+    tr.onclick = () => {
+      $('focalWaveGroup').value = row.id;
+      renderFocalWaveReproduction();
+    };
+    body.appendChild(tr);
+  }
+  const count = focalSelectedRows().length * 5;
+  const status = $('focalWaveStatus');
+  if (status) {
+    status.innerHTML = isFocalModelSelected() && isFocalRuntimeSelected()
+      ? `将生成 ${count} 个 wave-only case；Wave ID 用于标签，OpenFAST 随机相位由 WaveSeed(1) 生成。`
+      : '<span class="danger-text">请先选择 FOCAL C4 模型和 OpenFAST v4 runtime。</span>';
+  }
 }
 
 function renderDlcLearning() {
@@ -578,6 +1253,92 @@ function generateDlcCases() {
   toast(`已生成 ${seedCount} 个 DLC 1.1 case`);
 }
 
+function buildFocalWaveCase(row, waveId) {
+  const files = activeFiles();
+  const waveLabel = `E${waveId}`;
+  const set = {
+    [files.fst]: {
+      TMax: row.duration,
+      CompInflow: 0,
+      CompAero: 0,
+      CompServo: 0,
+      [files.seaStateCompKey]: 1,
+      CompHydro: 1,
+      CompMooring: files.defaultMooring
+    },
+    [files.sea]: {
+      WaveMod: 2,
+      WaveStMod: 0,
+      WaveTMax: row.duration,
+      WaveDT: 0.041833001,
+      WaveHs: row.hs,
+      WaveTp: row.tp,
+      WavePkShp: row.gamma,
+      WvLowCOff: 0,
+      WvHiCOff: 75.098,
+      WaveDir: 0,
+      WaveNDAmp: false,
+      'WaveSeed(1)': waveId
+    }
+  };
+  return {
+    name: `focal_${waveLabel.toLowerCase()}_jonswap`,
+    fst: files.fst,
+    set,
+    focal_wave: {
+      group: row.id,
+      wave_id: waveLabel,
+      reproduction_level: 'statistical_openfast_jonswap',
+      hs: row.hs,
+      tp: row.tp,
+      gamma: row.gamma,
+      psd_window_s: [2000, 8000]
+    },
+    notes: `FOCAL Table 24 ${waveLabel}: statistical OpenFAST JONSWAP realization; not the original basin phase seed.`,
+    timeout: 7200
+  };
+}
+
+function generateFocalWaveCases() {
+  collectForm();
+  if (!isFocalModelSelected() || !isFocalRuntimeSelected()) {
+    throw new Error('请先选择 FOCAL C4 模型和 OpenFAST v4 runtime，再生成 Table 24 工况。');
+  }
+  const rows = focalSelectedRows();
+  const cases = [];
+  for (const row of rows) {
+    for (let waveId = row.waveStart; waveId <= row.waveEnd; waveId += 1) {
+      cases.push(buildFocalWaveCase(row, waveId));
+    }
+  }
+  const token = rows.length === 2 ? 'e11_e25' : rows[0].id.toLowerCase();
+  const shouldPlot = Boolean($('focalWavePlot').checked);
+  state.scenarioFile = `focal_table24_${token}.json`;
+  state.scenario = {
+    name: `focal_table24_${token}`,
+    description: 'FOCAL Campaign 4 Table 24 five-seed statistical reproduction using OpenFAST JONSWAP waves.',
+    model_id: state.selectedModelId,
+    runtime_id: state.selectedRuntimeId,
+    reference_figures: rows.map(row => ({
+      label: `实验参考 E${row.waveStart}-E${row.waveEnd}: five wave seeds and PSD`,
+      url: row.referenceUrl,
+      source: 'UMaine ASCC Report 23-57-1183, Figure 25/26; local FOCAL Campaign 4 CSV'
+    })),
+    aggregate_plot: {
+      type: 'focal_wave_calibration',
+      groups: rows.map(row => row.id),
+      mode_frequencies_hz: FOCAL_MODE_FREQUENCIES,
+      psd_window_s: [2000, 8000]
+    },
+    cases
+  };
+  state.selectedCase = 0;
+  state.plotComparison = shouldPlot ? 'true' : 'false';
+  localStorage.setItem('openfastGui.plotComparison', state.plotComparison);
+  renderAll();
+  toast(`已生成 ${cases.length} 个 FOCAL Table 24 case`);
+}
+
 function renderCases() {
   const wrap = $('caseList');
   wrap.innerHTML = '';
@@ -585,11 +1346,12 @@ function renderCases() {
     const div = document.createElement('div');
     div.className = `case-item ${index === state.selectedCase ? 'active' : ''}`;
     const setCount = Object.values(c.set || {}).reduce((n, values) => n + Object.keys(values).length, 0);
-    div.innerHTML = `<div class="item-title"><span>${c.name || `case_${index + 1}`}</span><span class="badge">${setCount} keys</span></div><div class="item-meta">${c.notes || ''}</div>`;
+    div.innerHTML = `<div class="item-title"><span>${escapeHtml(c.name || `case_${index + 1}`)}</span><span class="badge">${setCount} keys</span></div><div class="item-meta">${escapeHtml(c.notes || '')}</div>`;
     div.onclick = () => { collectForm(); state.selectedCase = index; renderAll(); };
     wrap.appendChild(div);
   });
   const c = currentCase();
+  if ($('caseCount')) $('caseCount').textContent = `${state.selectedCase + 1} / ${state.scenario.cases.length} · ${state.scenario.cases.length} cases`;
   $('caseName').value = c.name || '';
   $('caseNotes').value = c.notes || '';
 }
@@ -1212,6 +1974,206 @@ function renderMatrixRows() {
   }
 }
 
+function renderModelStructure() {
+  const structure = state.meta?.modelStructure || {};
+  const nodes = Array.isArray(structure.nodes) ? structure.nodes : [];
+  const edges = Array.isArray(structure.edges) ? structure.edges : [];
+  const summary = structure.summary || {};
+  const summaryEl = $('modelSummary');
+  const list = $('modelFileList');
+  const details = $('modelDependencyList');
+  if (!summaryEl || !list || !details) return;
+
+  summaryEl.textContent = `${summary.files || 0} 个文件 · ${summary.existing || 0} 存在 · ${summary.missing || 0} 缺失 · ${summary.outListFiles || 0} 个文件含输出通道`;
+  const warnings = [...(structure.warnings || [])];
+  if (summary.missing) warnings.push(`${summary.missing} 个引用文件不存在；可能属于未启用模块，运行前仍应核对。`);
+  $('modelWarnings').innerHTML = warnings.map(value => `<div>${escapeHtml(value)}</div>`).join('');
+
+  if (!nodes.some(node => node.id === state.selectedModelFile)) {
+    state.selectedModelFile = structure.main || nodes[0]?.id || '';
+  }
+  const query = ($('modelFileSearch')?.value || '').trim().toLowerCase();
+  const matchingIds = new Set();
+  if (query) {
+    for (const edge of edges) {
+      if ([edge.key, edge.reference, edge.source, edge.target].some(value => String(value || '').toLowerCase().includes(query))) {
+        matchingIds.add(edge.source);
+        matchingIds.add(edge.target);
+      }
+    }
+  }
+  const filtered = nodes.filter(node => !query || node.id.toLowerCase().includes(query) || node.kind.toLowerCase().includes(query) || matchingIds.has(node.id));
+  list.innerHTML = '';
+  if (!filtered.length) list.innerHTML = '<div class="empty-state">没有匹配的模型文件</div>';
+  for (const node of filtered) {
+    const incoming = edges.filter(edge => edge.target === node.id).length;
+    const outgoing = edges.filter(edge => edge.source === node.id).length;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `model-file-item ${node.id === state.selectedModelFile ? 'active' : ''} ${node.exists ? '' : 'missing'}`;
+    button.innerHTML = `<span class="model-file-main"><strong>${escapeHtml(node.id)}</strong><span>${escapeHtml(node.kind)} · depth ${node.depth}</span></span><span class="model-file-stats"><span class="badge ${node.exists ? '' : 'missing'}">${node.exists ? 'OK' : 'MISSING'}</span><span>${incoming} in / ${outgoing} out${node.outListCount ? ` / ${node.outListCount} OutList` : ''}</span></span>`;
+    button.onclick = () => { state.selectedModelFile = node.id; renderModelStructure(); };
+    list.appendChild(button);
+  }
+
+  const selected = nodes.find(node => node.id === state.selectedModelFile);
+  $('modelDependencyTitle').textContent = selected ? selected.id : '引用关系';
+  details.innerHTML = '';
+  if (!selected) {
+    details.innerHTML = '<div class="empty-state">选择一个文件查看引用</div>';
+    return;
+  }
+  const related = edges.filter(edge => edge.source === selected.id || edge.target === selected.id);
+  const meta = document.createElement('div');
+  meta.className = 'model-file-meta';
+  meta.innerHTML = `<div><span>绝对路径</span><code>${escapeHtml(selected.path)}</code></div><div><span>类型</span><strong>${escapeHtml(selected.kind)}</strong></div><div><span>普通参数</span><strong>${selected.scalarCount || 0}</strong></div><div><span>OutList</span><strong>${selected.outListCount || 0}</strong></div>`;
+  details.appendChild(meta);
+  if (!related.length) {
+    details.insertAdjacentHTML('beforeend', '<div class="empty-state">没有发现文件引用</div>');
+    return;
+  }
+  for (const edge of related) {
+    const outgoing = edge.source === selected.id;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `dependency-row ${edge.exists ? '' : 'missing'}`;
+    const other = outgoing ? edge.target : edge.source;
+    row.innerHTML = `<span class="dependency-direction">${outgoing ? '引用 →' : '← 被引用'}</span><span class="dependency-target"><strong>${escapeHtml(other)}</strong><small>${escapeHtml(edge.key || 'table reference')} · line ${edge.line}${edge.exists ? '' : ' · MISSING'}</small></span>`;
+    row.onclick = () => { state.selectedModelFile = other; renderModelStructure(); };
+    details.appendChild(row);
+  }
+}
+
+function normalizedOutlistEdits() {
+  const c = currentCase();
+  if (Array.isArray(c.outlist_edits)) return c.outlist_edits;
+  if (c.outlist_edits && typeof c.outlist_edits === 'object') {
+    const rows = [];
+    for (const [file, edits] of Object.entries(c.outlist_edits)) {
+      for (const edit of (Array.isArray(edits) ? edits : [edits])) rows.push({ file, ...edit });
+    }
+    c.outlist_edits = rows;
+    return rows;
+  }
+  return [];
+}
+
+function templateOutlistSection(file, sectionIndex) {
+  return (state.meta?.outLists?.[file] || []).find(section => Number(section.section) === Number(sectionIndex));
+}
+
+function effectiveOutlistChannels(file, sectionIndex) {
+  const edit = normalizedOutlistEdits().find(row => row.file === file && Number(row.section || 0) === Number(sectionIndex));
+  return [...(edit?.channels || templateOutlistSection(file, sectionIndex)?.channels || [])];
+}
+
+function sameChannels(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function setOutlistChannels(file, sectionIndex, values) {
+  const channels = [];
+  for (const raw of values) {
+    const value = String(raw || '').trim().replace(/^"|"$/g, '');
+    if (value && !channels.includes(value)) channels.push(value);
+  }
+  const c = currentCase();
+  const next = normalizedOutlistEdits().filter(row => !(row.file === file && Number(row.section || 0) === Number(sectionIndex)));
+  const baseline = [...(templateOutlistSection(file, sectionIndex)?.channels || [])];
+  if (!sameChannels(channels, baseline)) next.push({ file, section: Number(sectionIndex), channels });
+  if (next.length) c.outlist_edits = next;
+  else delete c.outlist_edits;
+  renderOutlistEditor();
+  renderJson();
+}
+
+function resetCurrentOutlistFile() {
+  const file = state.selectedOutlistFile;
+  if (!file) return;
+  const c = currentCase();
+  const next = normalizedOutlistEdits().filter(row => row.file !== file);
+  if (next.length) c.outlist_edits = next;
+  else delete c.outlist_edits;
+  renderOutlistEditor();
+  renderJson();
+  toast(`已恢复 ${file} 的模板输出通道`);
+}
+
+function renderOutlistEditor() {
+  const select = $('outlistFileSelect');
+  const wrap = $('outlistSections');
+  const status = $('outlistStatus');
+  if (!select || !wrap || !status) return;
+  const files = Object.keys(state.meta?.outLists || {}).sort((a, b) => a.localeCompare(b));
+  if (!files.includes(state.selectedOutlistFile)) state.selectedOutlistFile = files[0] || '';
+  select.innerHTML = files.map(file => `<option value="${escapeHtml(file)}">${escapeHtml(file)}</option>`).join('');
+  select.value = state.selectedOutlistFile;
+  const edits = normalizedOutlistEdits();
+  const modifiedFiles = new Set(edits.map(row => row.file));
+  status.textContent = `${files.length} 个文件含输出区块 · 当前 case 修改了 ${modifiedFiles.size} 个文件`;
+  wrap.innerHTML = '';
+  if (!state.selectedOutlistFile) {
+    wrap.innerHTML = '<div class="empty-state">当前模型没有发现 OutList 区块</div>';
+    return;
+  }
+  const sections = state.meta.outLists[state.selectedOutlistFile] || [];
+  for (const section of sections) {
+    const sectionIndex = Number(section.section || 0);
+    const channels = effectiveOutlistChannels(state.selectedOutlistFile, sectionIndex);
+    const edited = edits.some(row => row.file === state.selectedOutlistFile && Number(row.section || 0) === sectionIndex);
+    const block = document.createElement('section');
+    block.className = 'outlist-section';
+    const head = document.createElement('div');
+    head.className = 'outlist-section-head';
+    head.innerHTML = `<div><strong>Section ${sectionIndex + 1}</strong><span>line ${section.headerLine}-${section.endLine} · ${channels.length} channels</span></div><span class="badge ${edited ? 'edited' : ''}">${edited ? '已修改' : '模板'}</span>`;
+    block.appendChild(head);
+    const rows = document.createElement('div');
+    rows.className = 'outlist-channel-list';
+    if (!channels.length) rows.innerHTML = '<div class="empty-state">当前没有输出通道</div>';
+    channels.forEach((channel, index) => {
+      const row = document.createElement('div');
+      row.className = 'outlist-channel-row';
+      const order = document.createElement('span');
+      order.textContent = String(index + 1);
+      const input = document.createElement('input');
+      input.value = channel;
+      input.setAttribute('aria-label', `输出通道 ${index + 1}`);
+      input.onchange = () => {
+        const next = [...channels];
+        next[index] = input.value;
+        setOutlistChannels(state.selectedOutlistFile, sectionIndex, next);
+      };
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove';
+      remove.textContent = '删';
+      remove.title = `删除 ${channel}`;
+      remove.onclick = () => setOutlistChannels(state.selectedOutlistFile, sectionIndex, channels.filter((_, itemIndex) => itemIndex !== index));
+      row.append(order, input, remove);
+      rows.appendChild(row);
+    });
+    block.appendChild(rows);
+    const add = document.createElement('div');
+    add.className = 'outlist-add-row';
+    const addInput = document.createElement('input');
+    addInput.placeholder = '输入 OpenFAST 输出通道名';
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'mini-button';
+    addButton.textContent = '添加通道';
+    const commit = () => {
+      const value = addInput.value.trim();
+      if (!value) return;
+      setOutlistChannels(state.selectedOutlistFile, sectionIndex, [...channels, value]);
+    };
+    addButton.onclick = commit;
+    addInput.onkeydown = event => { if (event.key === 'Enter') commit(); };
+    add.append(addInput, addButton);
+    block.appendChild(add);
+    wrap.appendChild(block);
+  }
+}
+
 function renderCatalog() {
   const wrap = $('catalog');
   const q = ($('catalogSearch').value || '').toLowerCase();
@@ -1270,6 +2232,7 @@ function cleanupScenarioForSave(data) {
   repairScenarioHydroReferences(data);
   for (const c of data.cases || []) {
     if (Array.isArray(c.matrix_edits) && c.matrix_edits.length === 0) delete c.matrix_edits;
+    if (Array.isArray(c.outlist_edits) && c.outlist_edits.length === 0) delete c.outlist_edits;
   }
   return data;
 }
@@ -1295,6 +2258,7 @@ async function loadScenario(file) {
   if (state.scenario.model_id) state.selectedModelId = state.scenario.model_id;
   if (state.scenario.runtime_id) state.selectedRuntimeId = state.scenario.runtime_id;
   await loadMeta();
+  await loadResultsCatalog({ preserve: false, preferScenario: true });
   state.selectedCase = 0;
   renderAll();
   toast(`已载入 ${file}`);
@@ -1335,7 +2299,9 @@ async function startJob(generateOnly) {
         generateOnly,
         overwrite: $('overwriteRun').checked,
         continueOnFail: $('continueOnFail').checked,
+        resume: $('resumeCompleted').checked,
         plotComparison: $('plotComparison').checked && !generateOnly,
+        workers: Math.min(4, Math.max(1, Number($('parallelWorkers').value) || 1)),
         modelId: state.selectedModelId,
         runtimeId: state.selectedRuntimeId
       }
@@ -1344,7 +2310,7 @@ async function startJob(generateOnly) {
   state.currentJob = data.jobId;
   state.jobRunning = true;
   renderJobFigures({ comparisonFigures: [] });
-  setJobButtons(false);
+  renderJobState({ status: 'queued', scenarioFile: state.scenarioFile, workers: state.parallelWorkers, output: '' });
   setActiveTab('runlog');
   pollJob();
 }
@@ -1352,24 +2318,37 @@ async function startJob(generateOnly) {
 function setJobButtons(enabled) {
   $('generateBtn').disabled = !enabled;
   $('runBtn').disabled = !enabled;
+  $('parallelWorkers').disabled = !enabled;
+  $('resumeCompleted').disabled = !enabled;
 }
 
 async function pollJob() {
   if (!state.currentJob) return;
+  if (state.pollTimer) clearTimeout(state.pollTimer);
   const job = await api(`/api/jobs/${state.currentJob}`);
-  const elapsed = job.elapsed_s !== undefined ? ` ${Math.round(job.elapsed_s)}s` : '';
-  $('jobStatus').textContent = `${job.status}${elapsed} ${job.returncode !== undefined ? `(${job.returncode})` : ''}`;
-  $('runLog').textContent = job.output || (['queued', 'running'].includes(job.status) ? '等待 OpenFAST 输出...' : '');
-  $('runLog').scrollTop = $('runLog').scrollHeight;
+  renderJobState(job);
   if (['queued', 'running'].includes(job.status)) {
     state.pollTimer = setTimeout(pollJob, 1200);
   } else {
     toast(job.status === 'done' ? '任务完成' : '任务失败');
     renderJobFigures(job);
-    state.jobRunning = false;
-    setJobButtons(true);
     await loadMeta();
+    await loadResultsCatalog({ preserve: false, preferScenario: true });
   }
+}
+
+async function restoreLatestJob() {
+  const payload = await api('/api/jobs');
+  const jobs = payload.jobs || [];
+  const job = jobs.find(item => ['queued', 'running'].includes(item.status)) || jobs[0];
+  if (!job) {
+    renderJobState({ status: 'idle' });
+    return;
+  }
+  state.currentJob = job.id;
+  renderJobState(job);
+  renderJobFigures(job);
+  if (['queued', 'running'].includes(job.status)) pollJob();
 }
 
 function applyPreset() {
@@ -1393,9 +2372,14 @@ function applyPreset() {
   toast(`已应用 ${preset.name}`);
 }
 
-function setActiveTab(name) {
+function setActiveTab(name, persist = true) {
+  if (!$(`tab-${name}`)) name = 'compose';
+  state.activeTab = name;
   document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
   document.querySelectorAll('.tab-page').forEach(page => page.classList.toggle('active', page.id === `tab-${name}`));
+  if (persist) localStorage.setItem('openfastGui.activeTab', name);
+  if (persist) document.querySelector(`.tab[data-tab="${name}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (name === 'results' && state.resultData) requestAnimationFrame(renderResultCharts);
 }
 
 function bindEvents() {
@@ -1407,6 +2391,8 @@ function bindEvents() {
     localStorage.setItem('openfastGui.modelId', state.selectedModelId);
     localStorage.removeItem('openfastGui.runtimeId');
     await loadMeta();
+    state.selectedModelFile = '';
+    state.selectedOutlistFile = '';
     delete currentCase().hydrodyn_tables;
     renderAll();
   };
@@ -1415,6 +2401,8 @@ function bindEvents() {
     state.selectedRuntimeId = $('runtimeSelect').value;
     localStorage.setItem('openfastGui.runtimeId', state.selectedRuntimeId);
     await loadMeta();
+    state.selectedModelFile = '';
+    state.selectedOutlistFile = '';
     delete currentCase().hydrodyn_tables;
     renderAll();
   };
@@ -1427,6 +2415,11 @@ function bindEvents() {
   $('addMorisonBtn').onclick = addDefaultMorisonMember;
   $('resetHydroTablesBtn').onclick = () => { delete currentCase().hydrodyn_tables; renderAll(); toast('已恢复模板 HydroDyn 表格'); };
   $('dlcGenerateBtn').onclick = () => { try { generateDlcCases(); } catch (err) { toast(err.message); } };
+  $('focalWaveGenerateBtn').onclick = () => { try { generateFocalWaveCases(); } catch (err) { toast(err.message); } };
+  ['focalWaveGroup', 'focalWavePlot'].forEach(id => {
+    const el = $(id);
+    if (el) el.oninput = renderFocalWaveReproduction;
+  });
   ['dlcWindSpeed', 'dlcWindMode', 'dlcSeedCount', 'dlcTMax', 'dlcWindSeedBase', 'dlcWaveSeedBase', 'dlcBtsSource', 'dlcPlotMetrics'].forEach(id => {
     const el = $(id);
     if (el) el.oninput = renderDlcLearning;
@@ -1435,9 +2428,32 @@ function bindEvents() {
   $('saveBtn').onclick = () => saveScenario().catch(err => toast(err.message));
   $('generateBtn').onclick = () => startJob(true).catch(err => toast(err.message));
   $('runBtn').onclick = () => startJob(false).catch(err => toast(err.message));
-  $('refreshBtn').onclick = async () => { await loadMeta(); renderAll(); };
+  $('refreshBtn').onclick = async () => { await loadMeta(); await loadResultsCatalog(); renderAll(); await restoreLatestJob(); };
+  $('jobStatusButton').onclick = () => setActiveTab('runlog');
+  $('scenarioSearch').oninput = () => { state.scenarioQuery = $('scenarioSearch').value; renderScenarioList(); };
   $('plotComparison').onchange = updatePlotComparisonPreference;
+  $('parallelWorkers').onchange = () => {
+    state.parallelWorkers = Math.min(4, Math.max(1, Number($('parallelWorkers').value) || 1));
+    $('parallelWorkers').value = String(state.parallelWorkers);
+    localStorage.setItem('openfastGui.parallelWorkers', String(state.parallelWorkers));
+  };
   $('catalogSearch').oninput = renderCatalog;
+  $('modelFileSearch').oninput = renderModelStructure;
+  $('outlistFileSelect').onchange = () => { state.selectedOutlistFile = $('outlistFileSelect').value; renderOutlistEditor(); };
+  $('resetOutlistFileBtn').onclick = resetCurrentOutlistFile;
+  $('resultRefreshBtn').onclick = () => loadResultsCatalog();
+  $('resultScenarioFilter').onchange = () => { state.resultScenarioFilter = $('resultScenarioFilter').value; renderResultsWorkspace(); };
+  $('resultFileSearch').oninput = renderResultFileList;
+  $('resultSelectPrimaryBtn').onclick = selectPrimaryResults;
+  $('resultChannelSearch').oninput = renderResultChannelList;
+  $('resultSelectCommonBtn').onclick = () => selectCommonResultChannels();
+  $('resultClearChannelsBtn').onclick = () => { state.selectedResultChannels = []; invalidateResultAnalysis(); renderResultsWorkspace(); };
+  $('resultAnalyzeBtn').onclick = analyzeSelectedResults;
+  $('resultViewTime').onclick = () => setResultView('time');
+  $('resultViewPsd').onclick = () => setResultView('psd');
+  $('resultExportCsvBtn').onclick = exportResultsCsv;
+  $('resultExportPngBtn').onclick = exportResultsPng;
+  $('resultPrintBtn').onclick = printResults;
   $('jsonEditor').oninput = () => { state.jsonDirty = true; };
   ['quickTMax', 'quickWind', 'quickWaveMod', 'quickHs', 'quickTp', 'quickWavePkShp', 'quickWaveDir'].forEach(id => {
     $(id).oninput = () => {
@@ -1453,14 +2469,23 @@ function bindEvents() {
 async function init() {
   bindEvents();
   renderJobFigures({ comparisonFigures: [] });
+  renderJobState({ status: 'idle' });
   await loadMeta();
   if (state.scenarioList?.length) {
-    const first = state.scenarioList.find(s => s.file === 'steady_wind.json') || state.scenarioList[0];
+    const first = state.scenarioList.find(s => s.file === 'focal_irregular_wave_compare.json') || state.scenarioList[0];
     await loadScenario(first.file);
   } else {
     normalizeScenario();
     renderAll();
+    await loadResultsCatalog();
   }
+  window.addEventListener('resize', () => {
+    clearTimeout(state.resultResizeTimer);
+    state.resultResizeTimer = setTimeout(() => {
+      if (state.activeTab === 'results' && state.resultData) renderResultCharts();
+    }, 160);
+  });
+  await restoreLatestJob();
 }
 
 init().catch(err => {

@@ -42,6 +42,7 @@ ui_server*.log
 # Local indexes and OS/editor files
 .codegraph/
 config/local_model_profiles.json
+tmp_*.txt
 .DS_Store
 Thumbs.db
 .idea/

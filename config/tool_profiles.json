@@ -1,0 +1,76 @@
+{
+  "tools": [
+    {
+      "id": "openfast",
+      "name": "OpenFAST",
+      "kind": "process",
+      "path": "",
+      "accepts": [".fst"],
+      "description": "Run a complete OpenFAST model from its primary .fst input file."
+    },
+    {
+      "id": "turbsim",
+      "name": "TurbSim",
+      "kind": "process",
+      "path": "${TURBSIM_EXE}",
+      "accepts": [".in"],
+      "description": "Generate TurbSim full-field wind files (.bts)."
+    },
+    {
+      "id": "fastfarm",
+      "name": "FAST.Farm",
+      "kind": "process",
+      "path": "${FASTFARM_EXE}",
+      "accepts": [".fstf"],
+      "description": "Run wind-farm wake simulations using FAST.Farm."
+    },
+    {
+      "id": "aerodyn_driver",
+      "name": "AeroDyn driver",
+      "kind": "process",
+      "path": "${AERODYN_DRIVER_EXE}",
+      "accepts": [".dvr", ".inp", ".dat"],
+      "description": "Run AeroDyn independently from the OpenFAST glue code."
+    },
+    {
+      "id": "hydrodyn_driver",
+      "name": "HydroDyn driver",
+      "kind": "process",
+      "path": "${HYDRODYN_DRIVER_EXE}",
+      "accepts": [".dvr", ".inp", ".dat"],
+      "description": "Run HydroDyn and SeaState independently."
+    },
+    {
+      "id": "beamdyn_driver",
+      "name": "BeamDyn driver",
+      "kind": "process",
+      "path": "${BEAMDYN_DRIVER_EXE}",
+      "accepts": [".dvr", ".inp", ".dat"],
+      "description": "Run BeamDyn static or dynamic driver cases."
+    },
+    {
+      "id": "subdyn_driver",
+      "name": "SubDyn driver",
+      "kind": "process",
+      "path": "${SUBDYN_DRIVER_EXE}",
+      "accepts": [".dvr", ".inp", ".dat"],
+      "description": "Run SubDyn independently from OpenFAST."
+    },
+    {
+      "id": "openfast_library",
+      "name": "OpenFAST Library API",
+      "kind": "library",
+      "path": "${OPENFAST_LIBRARY}",
+      "accepts": [".dll", ".so", ".dylib"],
+      "description": "C/Fortran library interface for external glue codes and CFD coupling."
+    },
+    {
+      "id": "simulink",
+      "name": "OpenFAST Simulink S-Function",
+      "kind": "library",
+      "path": "${OPENFAST_SIMULINK_SFUNC}",
+      "accepts": [".mexw64", ".mexa64", ".mexmaci64"],
+      "description": "Compiled FAST_SFunc interface loaded by MATLAB/Simulink."
+    }
+  ]
+}

@@ -30,8 +30,8 @@
     <div class="top-actions">
       <button id="refreshBtn" class="button subtle" title="刷新模型、场景和任务状态">刷新</button>
       <button id="saveBtn" class="button">保存场景</button>
-      <button id="generateBtn" class="button strong">生成输入</button>
-      <button id="runBtn" class="button danger">运行 OpenFAST</button>
+      <button id="generateBtn" class="button subtle">生成输入</button>
+      <button id="runBtn" class="button strong">运行 OpenFAST</button>
     </div>
   </header>
 
@@ -100,12 +100,15 @@
         <button class="tab active" data-tab="compose">工况配置</button>
         <button class="tab" data-tab="dlc">DLC 学习</button>
         <button class="tab" data-tab="advanced">高级键值</button>
+        <button class="tab" data-tab="modules">模块编辑</button>
         <button class="tab" data-tab="model">模型结构</button>
         <button class="tab" data-tab="outputs">输出通道</button>
         <button class="tab" data-tab="hydro">水动力构件</button>
         <button class="tab" data-tab="catalog">参数库</button>
         <button class="tab" data-tab="json">JSON</button>
         <button class="tab" data-tab="results">结果分析</button>
+        <button class="tab" data-tab="engineering">线性化 / VTK</button>
+        <button class="tab" data-tab="tools">外部接口</button>
         <button class="tab" data-tab="runlog">运行日志</button>
       </nav>
 
@@ -307,6 +310,61 @@
         </div>
       </section>
 
+      <section id="tab-modules" class="tab-page">
+        <section class="module-coverage-band" aria-label="模块覆盖状态">
+          <div>
+            <h2>模块插件</h2>
+            <p id="moduleCoverageSummary" class="section-kicker"></p>
+          </div>
+          <div id="moduleCoverage" class="module-coverage"></div>
+        </section>
+        <div class="module-workspace">
+          <aside class="module-file-browser">
+            <div class="module-browser-head">
+              <h2>输入文件</h2>
+              <input id="moduleFileSearch" class="search" placeholder="模块或文件">
+            </div>
+            <div id="moduleFileList" class="module-file-list"></div>
+          </aside>
+          <section class="module-editor" aria-live="polite">
+            <header class="module-editor-head">
+              <div>
+                <p id="moduleEditorStage" class="section-kicker">选择输入文件</p>
+                <h2 id="moduleEditorTitle">模块编辑器</h2>
+                <p id="moduleEditorDescription" class="hint"></p>
+              </div>
+              <div class="module-editor-actions">
+                <a id="moduleDocsLink" class="mini-button" target="_blank" rel="noreferrer" hidden>官方文档</a>
+                <button id="moduleResetEditsBtn" class="mini-button" disabled>恢复当前文件</button>
+              </div>
+            </header>
+            <div class="module-toolbar">
+              <div class="segmented" aria-label="模块编辑模式">
+                <button id="moduleFormMode" class="active" type="button">结构化</button>
+                <button id="moduleSourceMode" type="button">源文件</button>
+              </div>
+              <input id="moduleFieldSearch" class="search" placeholder="参数、说明或行号">
+              <span id="moduleEditStatus" class="section-kicker"></span>
+            </div>
+            <div id="moduleLoading" class="module-loading" hidden>正在读取模块文件...</div>
+            <div id="moduleError" class="inline-error" hidden></div>
+            <div id="moduleValidation" class="module-validation" hidden></div>
+            <div id="moduleStructuredView">
+              <div id="moduleFieldGroups" class="module-field-groups"></div>
+              <div id="moduleTableGroups" class="module-table-groups"></div>
+              <div id="moduleMatrixGroups" class="module-matrix-groups"></div>
+            </div>
+            <div id="moduleSourceView" class="module-source-view" hidden>
+              <div class="source-editor-head">
+                <p>原文覆盖保留文件排版，运行时只写入复制出的 case。适合增删表格行或处理未识别格式。</p>
+                <button id="moduleSaveSourceBtn" class="button strong">保存原文覆盖</button>
+              </div>
+              <textarea id="moduleSourceEditor" spellcheck="false" aria-label="模块源文件"></textarea>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section id="tab-model" class="tab-page">
         <section class="panel model-summary-panel">
           <div class="panel-head">
@@ -352,6 +410,7 @@
             <h2>HydroDyn 表格状态</h2>
             <div class="panel-actions">
               <button id="addMorisonBtn" class="mini-button">添加 Morison 构件</button>
+              <button id="addMorisonRecBtn" class="mini-button">添加矩形构件（v5）</button>
               <button id="resetHydroTablesBtn" class="mini-button">恢复模板表格</button>
             </div>
           </div>
@@ -381,6 +440,26 @@
           <section class="panel">
             <div class="panel-head"><h2>轴向系数</h2></div>
             <div id="hydroAxial"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>圆柱深度系数</h2></div>
+            <div id="hydroDepthCyl"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>矩形截面属性（v5）</h2></div>
+            <div id="hydroPropsRec"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>矩形 Simple 系数（v5）</h2></div>
+            <div id="hydroSimpleRec"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>矩形深度系数（v5）</h2></div>
+            <div id="hydroDepthRec"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>矩形成员系数（v5）</h2></div>
+            <div id="hydroMemberCoeffsRec"></div>
           </section>
         </div>
       </section>
@@ -480,6 +559,117 @@
         </section>
       </section>
 
+      <section id="tab-engineering" class="tab-page">
+        <section class="engineering-band">
+          <div>
+            <p class="section-kicker">OpenFAST 后处理</p>
+            <h2>线性化与三维检查</h2>
+          </div>
+          <button id="engineeringRefreshBtn" class="mini-button">刷新文件</button>
+        </section>
+
+        <section class="linearization-workspace">
+          <header class="engineering-section-head">
+            <div>
+              <h2>线性化模态</h2>
+              <p id="linearizationStatus" class="section-kicker"></p>
+            </div>
+            <div class="engineering-actions">
+              <select id="linearizationFileSelect" aria-label="线性化文件"></select>
+              <button id="linearizationAnalyzeBtn" class="button strong">分析 .lin</button>
+            </div>
+          </header>
+          <div id="linearizationEmpty" class="empty-state engineering-empty">
+            <div>
+              <strong>还没有线性化结果</strong>
+              <p>在高级键值中将 <code>Linearize</code> 设为 <code>True</code>，运行工况后即可分析生成的 <code>.lin</code> 文件。</p>
+              <button id="linearizationSetupBtn" class="mini-button" type="button">打开高级键值</button>
+            </div>
+          </div>
+          <div id="linearizationResults" hidden>
+            <div id="linearizationSummary" class="metric-strip"></div>
+            <canvas id="linearizationCanvas" height="280" aria-label="模态频率与阻尼图"></canvas>
+            <div class="data-table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Mode</th><th>Frequency Hz</th><th>Natural Hz</th><th>Damping</th><th>Real</th><th>Imag</th><th>Dominant state</th><th>Stable</th></tr></thead>
+                <tbody id="linearizationTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="vtk-workspace">
+          <header class="engineering-section-head">
+            <div>
+              <h2>VTK 三维查看器</h2>
+              <p id="vtkStatus" class="section-kicker"></p>
+            </div>
+            <div class="engineering-actions">
+              <select id="vtkFileSelect" aria-label="VTK 文件"></select>
+              <button id="vtkLoadBtn" class="button strong">载入几何</button>
+              <button id="vtkResetCameraBtn" class="mini-button">重置视角</button>
+            </div>
+          </header>
+          <div id="vtkViewport" class="vtk-viewport" aria-label="OpenFAST VTK 3D viewport">
+            <div id="vtkEmpty" class="vtk-empty">
+              <div>
+                <strong>还没有可查看的几何</strong>
+                <p>启用 <code>WrVTK</code> 后运行 OpenFAST，再从这里载入 VTK、VTP 或 PVD 文件。</p>
+                <button id="vtkSetupBtn" class="mini-button" type="button">打开高级键值</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="tab-tools" class="tab-page">
+        <section class="engineering-band">
+          <div>
+            <p class="section-kicker">可插拔执行环境</p>
+            <h2>TurbSim、FAST.Farm 与模块接口</h2>
+          </div>
+          <button id="toolsRefreshBtn" class="mini-button">重新检测</button>
+        </section>
+        <section class="tool-generator">
+          <div>
+            <h2>生成工具输入</h2>
+            <p class="hint">TurbSim 生成独立 `.in`；FAST.Farm 生成单排风机基准 `.fstf`，随后可继续用模块格式编辑。</p>
+          </div>
+          <div class="tool-generator-grid">
+            <label><span>类型</span><select id="toolGenerateKind"><option value="turbsim">TurbSim</option><option value="fastfarm">FAST.Farm</option></select></label>
+            <label><span>文件名</span><input id="toolGenerateFile" value="wind_U8_seed10101.in"></label>
+            <label><span>TMax / AnalysisTime s</span><input id="toolGenerateTime" type="number" min="1" step="1" value="720"></label>
+            <label><span>风速 m/s</span><input id="toolGenerateWind" type="number" min="0.1" step="0.1" value="8"></label>
+            <label><span>Seed</span><input id="toolGenerateSeed" type="number" step="1" value="10101"></label>
+            <label><span>风机数量</span><input id="toolGenerateTurbines" type="number" min="1" max="50" step="1" value="1"></label>
+            <label><span>风机间距 m</span><input id="toolGenerateSpacing" type="number" min="1" step="10" value="1680"></label>
+            <button id="toolGenerateBtn" class="button strong">生成输入</button>
+          </div>
+          <div id="toolGeneratedFiles" class="generated-tool-files"></div>
+          <div id="toolInputEditor" class="tool-input-editor" hidden>
+            <div class="source-editor-head">
+              <div><strong id="toolInputEditorTitle"></strong><p id="toolInputEditorMeta"></p></div>
+              <button id="toolInputSaveBtn" class="button strong">保存工具输入</button>
+            </div>
+            <textarea id="toolInputSourceEditor" spellcheck="false" aria-label="工具输入源文件"></textarea>
+          </div>
+        </section>
+        <div id="toolProfileList" class="tool-profile-list"></div>
+        <section class="tool-launcher">
+          <div>
+            <h2>运行已配置工具</h2>
+            <p class="hint">输入文件必须位于当前模型或 runs 目录；命令不经过 shell。</p>
+          </div>
+          <div class="tool-launch-grid">
+            <label><span>工具</span><select id="toolLaunchSelect"></select></label>
+            <label><span>来源</span><select id="toolInputSource"><option value="workspace">工具输入目录</option><option value="model">当前模型</option><option value="runs">runs</option></select></label>
+            <label class="wide"><span>相对输入文件</span><input id="toolInputFile" placeholder="例如 Wind/case.in 或 Farm.fstf"></label>
+            <button id="toolRunBtn" class="button strong">启动工具</button>
+          </div>
+          <pre id="toolRunLog">尚未启动外部工具。</pre>
+        </section>
+      </section>
+
       <section id="tab-runlog" class="tab-page">
         <section class="panel" id="jobFiguresPanel">
           <div class="panel-head">
@@ -497,6 +687,10 @@
           </div>
           <div class="run-progress" aria-hidden="true"><span id="runProgressBar"></span></div>
           <div id="workerProgress" class="worker-progress-grid" hidden></div>
+          <div class="runlog-toolbar">
+            <span id="runLogMeta" class="section-kicker">实时输出会显示在这里</span>
+            <label class="runlog-follow"><input id="runLogFollow" type="checkbox" checked> 跟随最新输出</label>
+          </div>
           <pre id="runLog">尚未运行任务。</pre>
         </section>
       </section>
@@ -504,6 +698,7 @@
   </main>
 
   <div id="toast" class="toast"></div>
+  <script type="module" src="/vtk_viewer.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -47,7 +47,12 @@
         "IEA-15-240-RWT-UMaineSemi_ServoDyn.dat",
         "IEA-15-240-RWT-UMaineSemi_SeaState.dat",
         "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
-        "IEA-15-240-RWT-UMaineSemi_MoorDyn.dat"
+        "IEA-15-240-RWT-UMaineSemi_MoorDyn.dat",
+        "IEA-15-240-RWT/IEA-15-240-RWT_BeamDyn.dat",
+        "IEA-15-240-RWT/IEA-15-240-RWT_BeamDyn_blade.dat",
+        "IEA-15-240-RWT-UMaineSemi_DISCON.IN",
+        "IEA-15-240-RWT-UMaineSemi_ROSCO.yaml",
+        "IEA-15-240-RWT/Wind/IEA15MW_IEC_ETM_U50.0_Seed60362647.in"
       ]
     }
   ],

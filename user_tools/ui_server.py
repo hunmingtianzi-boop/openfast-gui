@@ -8,6 +8,7 @@ import mimetypes
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -31,8 +32,19 @@ for import_path in [WORK_C4, USER_TOOLS]:
 
 from driver_c4 import _ensure_hydrodyn_v4  # noqa: E402
 from hydrodyn_tables import parse_hydrodyn_tables  # noqa: E402
-from openfast_input import outlists_for_structure, parse_scalar_fields, read_text_lines  # noqa: E402
+from linearization_workspace import analyze_linearization, discover_linearizations  # noqa: E402
+from module_plugins import capability_matrix, plugin_definitions  # noqa: E402
+from openfast_input import (  # noqa: E402
+    module_catalog_for_structure,
+    outlists_for_structure,
+    parse_editable_document,
+    parse_scalar_fields,
+    read_text_lines,
+)
 from results_workspace import analyze_results, discover_results, read_output_metadata, resolve_result_path  # noqa: E402
+from tool_profiles import run_tool, select_tool, tool_profiles, update_local_tool  # noqa: E402
+from tool_inputs import TOOL_INPUTS, generate_tool_input, safe_tool_input_path, save_tool_input, tool_input_catalog  # noqa: E402
+from visualization_workspace import discover_visualizations, load_visualization_geometry  # noqa: E402
 from model_profiles import (  # noqa: E402
     dependency_structure_for_model,
     input_files_for_model,
@@ -221,6 +233,19 @@ def model_path(model: dict) -> pathlib.Path:
     return pathlib.Path(model["path"])
 
 
+def model_input_path(model: dict, file_id: str) -> pathlib.Path:
+    root = model_path(model).resolve()
+    normalized = pathlib.PurePosixPath(str(file_id).replace("\\", "/"))
+    path = (root / normalized).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Model file escapes selected model: {file_id}") from exc
+    if not path.is_file():
+        raise FileNotFoundError(f"Model input file not found: {file_id}")
+    return path
+
+
 def active_context(qs: dict[str, list[str]] | None = None, options: dict | None = None) -> tuple[dict, dict]:
     qs = qs or {}
     options = options or {}
@@ -298,13 +323,34 @@ def module_presets_for(model: dict) -> list[dict]:
 def interface_modes_for(model: dict, runtime: dict) -> list[dict]:
     fst = model.get("fst") or "Input.fst"
     exe = pathlib.Path(runtime.get("path") or "openfast").name
+    tools = {str(row.get("id")): row for row in tool_profiles()}
+
+    def tool_mode(tool_id: str, scope: str) -> dict:
+        tool = tools.get(tool_id) or {"id": tool_id, "name": tool_id, "status": "not-installed"}
+        return {
+            "name": tool.get("name", tool_id),
+            "status": "ready" if tool.get("runnable") else "configurable",
+            "entry": tool.get("path") or "在工具接口页配置可执行文件",
+            "scope": scope,
+        }
+
     return [
         {"name": "OpenFAST 耦合 .fst", "status": "supported", "entry": f"{exe} {fst}", "scope": "按当前模型 profile 复制模板并运行"},
         {"name": "JSON 场景批量", "status": "supported", "entry": "user_tools/run_scenario.py", "scope": "复制完整模型后按参数覆盖运行一个或多个 case"},
-        {"name": "线性化", "status": "template-supported", "entry": f"{fst} Linearize=True", "scope": "受所选模块限制的 OpenFAST 全系统线性化"},
-        {"name": "VTK 可视化", "status": "template-supported", "entry": f"{fst} WrVTK", "scope": "OpenFAST 几何/运动可视化输出"},
-        {"name": "模块独立 driver", "status": "documented-only", "entry": "AeroDyn / HydroDyn / SeaState / BeamDyn drivers", "scope": "当前 GUI 主要面向 OpenFAST 主耦合入口"},
-        {"name": "FAST.Farm", "status": "documented-only", "entry": "FAST.Farm primary input", "scope": "风场级仿真接口，当前未打包"},
+        {"name": "线性化", "status": "supported", "entry": f"{fst} Linearize=True", "scope": "配置线性化并解析 .lin 模态、频率和阻尼"},
+        {"name": "VTK 可视化", "status": "supported", "entry": f"{fst} WrVTK", "scope": "发现并在浏览器三维查看 ASCII VTK/VTP/PVD"},
+        tool_mode("turbsim", "生成全场湍流风并校验 InflowWind .bts 引用"),
+        tool_mode("fastfarm", "编辑和运行 FAST.Farm 风场级仿真"),
+        tool_mode("aerodyn_driver", "AeroDyn 独立 driver"),
+        tool_mode("hydrodyn_driver", "HydroDyn / SeaState 独立 driver"),
+        tool_mode("beamdyn_driver", "BeamDyn 独立 driver"),
+        tool_mode("subdyn_driver", "SubDyn 独立 driver"),
+        {
+            "name": "OpenFAST Library / Simulink",
+            "status": "ready" if (tools.get("openfast_library", {}).get("exists") or tools.get("simulink", {}).get("exists")) else "configurable",
+            "entry": tools.get("openfast_library", {}).get("path") or tools.get("simulink", {}).get("path") or "在工具接口页配置库文件",
+            "scope": "外部 C/C++/Fortran glue code、CFD 或 MATLAB/Simulink 接口",
+        },
     ]
 
 
@@ -464,6 +510,94 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
         )
 
 
+def resolve_tool_input(model: dict, file_id: str, source: str = "model") -> pathlib.Path:
+    if source == "model":
+        return model_input_path(model, file_id)
+    if source == "workspace":
+        path = safe_tool_input_path(file_id)
+        if not path.is_file():
+            raise FileNotFoundError(f"Workspace tool input not found: {file_id}")
+        return path
+    if source != "runs":
+        raise ValueError("External tool input source must be model, workspace or runs")
+    root = RUNS.resolve()
+    path = (root / pathlib.PurePosixPath(str(file_id).replace("\\", "/"))).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"External tool input escapes runs directory: {file_id}") from exc
+    if not path.is_file():
+        raise FileNotFoundError(f"External tool input file not found: {file_id}")
+    return path
+
+
+def run_external_tool_job(job_id: str, tool_id: str, input_path: pathlib.Path) -> None:
+    tool = select_tool(tool_id)
+    command = [str(tool.get("path") or ""), input_path.name]
+    with JOBS_LOCK:
+        JOBS[job_id].update(
+            {
+                "status": "running",
+                "command": command,
+                "toolId": tool_id,
+                "input": str(input_path),
+                "startedAt": time.time(),
+            }
+        )
+    try:
+        completed = run_tool(tool, input_path)
+        output = (completed.stdout or "") + (("\n" + completed.stderr) if completed.stderr else "")
+        with JOBS_LOCK:
+            JOBS[job_id].update(
+                {
+                    "status": "done" if completed.returncode == 0 else "failed",
+                    "returncode": completed.returncode,
+                    "finishedAt": time.time(),
+                    "output": output[-200_000:],
+                }
+            )
+    except Exception as exc:
+        with JOBS_LOCK:
+            JOBS[job_id].update(
+                {
+                    "status": "failed",
+                    "returncode": None,
+                    "finishedAt": time.time(),
+                    "output": str(exc),
+                }
+            )
+
+
+def stage_external_tool_input(model: dict, input_path: pathlib.Path, source: str, tool_id: str) -> pathlib.Path:
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", input_path.stem).strip("_") or "input"
+    run_dir = RUNS / "external_tools" / f"{stamp}_{tool_id}_{safe_stem}"
+    suffix = 1
+    while run_dir.exists():
+        run_dir = RUNS / "external_tools" / f"{stamp}_{tool_id}_{safe_stem}_{suffix}"
+        suffix += 1
+    if source == "model":
+        model_root = model_path(model).resolve()
+        relative = input_path.resolve().relative_to(model_root)
+        shutil.copytree(model_root, run_dir)
+        return run_dir / relative
+    run_dir.mkdir(parents=True, exist_ok=False)
+    if source == "workspace":
+        target = run_dir / input_path.name
+        shutil.copy2(input_path, target)
+        if tool_id == "fastfarm":
+            model_root = model_path(model).resolve()
+            shutil.copytree(model_root, run_dir / "model")
+            text = target.read_text(encoding="utf-8", errors="replace")
+            source_root = str(model_root).replace("\\", "/")
+            target.write_text(text.replace(source_root, "model"), encoding="utf-8")
+        return target
+    source_root = input_path.parent.resolve()
+    staged_root = run_dir / "input"
+    shutil.copytree(source_root, staged_root)
+    return staged_root / input_path.name
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "OpenFASTUI/1.0"
 
@@ -496,6 +630,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/meta":
                 model, runtime = active_context(qs=qs)
                 structure = dependency_structure_for_model(model)
+                module_catalog = module_catalog_for_structure(model_path(model), structure)
                 return self.send_json(
                     {
                         "root": str(ROOT),
@@ -510,15 +645,25 @@ class Handler(BaseHTTPRequestHandler):
                         "openfastExists": bool(runtime.get("exists")),
                         "runScenario": str(RUN_SCENARIO),
                         "modelStructure": structure,
+                        "modulePlugins": plugin_definitions(),
+                        "moduleCatalog": module_catalog,
+                        "capabilityMatrix": capability_matrix(module_catalog),
                         "templateKeys": parse_template_keys(model, structure=structure),
                         "outLists": parse_model_outlists(model, structure=structure),
                         "hydroMatrices": parse_hydrodyn_matrices(model),
                         "hydroTables": parse_hydrodyn_tables_meta(model, runtime),
                         "modulePresets": module_presets_for(model),
                         "interfaceModes": interface_modes_for(model, runtime),
+                        "externalTools": tool_profiles(),
                         "docLinks": DOC_LINKS,
                     }
                 )
+            if path == "/api/module":
+                model, _runtime = active_context(qs=qs)
+                file_id = qs.get("file", [""])[0]
+                if not file_id:
+                    raise ValueError("Missing module file")
+                return self.send_json(parse_editable_document(model_input_path(model, file_id), file_id=file_id))
             if path == "/api/scenarios":
                 return self.send_json({"scenarios": scenario_list()})
             if path == "/api/scenario":
@@ -531,6 +676,20 @@ class Handler(BaseHTTPRequestHandler):
                 file_id = qs.get("file", [""])[0]
                 result_path = resolve_result_path(RUNS, file_id)
                 return self.send_json({"id": file_id, "metadata": read_output_metadata(result_path)})
+            if path == "/api/linearizations":
+                return self.send_json(discover_linearizations(RUNS))
+            if path == "/api/visualizations":
+                return self.send_json(discover_visualizations(RUNS))
+            if path == "/api/visualizations/geometry":
+                file_id = qs.get("file", [""])[0]
+                return self.send_json(load_visualization_geometry(RUNS, file_id))
+            if path == "/api/tools":
+                return self.send_json({"tools": tool_profiles()})
+            if path == "/api/tool-inputs":
+                return self.send_json({"root": str(TOOL_INPUTS), "files": tool_input_catalog()})
+            if path == "/api/tool-input":
+                file_id = qs.get("file", [""])[0]
+                return self.send_json(parse_editable_document(safe_tool_input_path(file_id), file_id=file_id))
             if path == "/api/jobs":
                 with JOBS_LOCK:
                     jobs = [job_snapshot(job) for job in JOBS.values()]
@@ -601,6 +760,57 @@ class Handler(BaseHTTPRequestHandler):
                     include_psd=bool(body.get("includePsd", True)),
                 )
                 return self.send_json(result)
+            if parsed.path == "/api/linearizations/analyze":
+                file_id = str(body.get("file") or "")
+                if not file_id:
+                    raise ValueError("Missing linearization file")
+                return self.send_json(analyze_linearization(RUNS, file_id))
+            if parsed.path == "/api/tools":
+                tool_id = str(body.get("id") or "")
+                return self.send_json({"ok": True, "tool": update_local_tool(tool_id, str(body.get("path") or ""))})
+            if parsed.path == "/api/tool-jobs":
+                tool_id = str(body.get("toolId") or "")
+                tool = select_tool(tool_id)
+                if not tool.get("runnable"):
+                    raise FileNotFoundError(f"{tool.get('name', tool_id)} executable is not configured")
+                model, _runtime = active_context(options={"modelId": body.get("modelId")})
+                source = str(body.get("source") or "model")
+                input_path = resolve_tool_input(model, str(body.get("inputFile") or ""), source)
+                staged_input = stage_external_tool_input(model, input_path, source, tool_id)
+                job_id = uuid.uuid4().hex[:12]
+                with JOBS_LOCK:
+                    JOBS[job_id] = {
+                        "id": job_id,
+                        "status": "queued",
+                        "kind": "external-tool",
+                        "toolId": tool_id,
+                        "input": str(staged_input),
+                        "sourceInput": str(input_path),
+                        "output": "",
+                        "createdAt": time.time(),
+                    }
+                thread = threading.Thread(target=run_external_tool_job, args=(job_id, tool_id, staged_input), daemon=True)
+                thread.start()
+                return self.send_json({"ok": True, "jobId": job_id})
+            if parsed.path == "/api/tool-inputs/generate":
+                kind = str(body.get("kind") or "")
+                spec = dict(body.get("spec") or {})
+                model, _runtime = active_context(options={"modelId": body.get("modelId")})
+                if kind == "fastfarm":
+                    spec.setdefault("fst_file", model.get("fst") or "OpenFAST.fst")
+                    spec.setdefault("inflow_file", model.get("inflowFile") or "InflowWind.dat")
+                    if body.get("absoluteModelPaths", True):
+                        spec["fst_file"] = str(model_input_path(model, str(spec["fst_file"])))
+                        spec["inflow_file"] = str(model_input_path(model, str(spec["inflow_file"])))
+                result = generate_tool_input(kind, str(body.get("file") or kind), spec)
+                return self.send_json({"ok": True, "result": result, "files": tool_input_catalog()})
+            if parsed.path == "/api/tool-input":
+                result = save_tool_input(
+                    str(body.get("file") or ""),
+                    str(body.get("content") or ""),
+                    str(body.get("source_sha256") or ""),
+                )
+                return self.send_json({"ok": True, "result": result, "files": tool_input_catalog()})
             return self.send_error_json("Unknown endpoint", status=404)
         except Exception as exc:
             return self.send_error_json(exc, status=500)

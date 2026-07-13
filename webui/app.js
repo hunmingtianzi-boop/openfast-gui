@@ -2,6 +2,7 @@ const state = {
   meta: null,
   scenarioFile: 'ui_scenario.json',
   scenario: { name: 'ui_scenario', description: 'Created from visual UI', cases: [] },
+  savedScenarioFingerprint: '',
   selectedCase: 0,
   selectedModelId: localStorage.getItem('openfastGui.modelId') || '',
   selectedRuntimeId: localStorage.getItem('openfastGui.runtimeId') || '',
@@ -14,14 +15,36 @@ const state = {
   scenarioQuery: '',
   selectedModelFile: '',
   selectedOutlistFile: '',
+  selectedModuleFile: '',
+  moduleDocuments: new Map(),
+  moduleLoading: false,
+  moduleError: '',
+  moduleMode: 'form',
+  moduleFileQuery: '',
+  moduleFieldQuery: '',
   resultsCatalog: null,
   selectedResultFiles: [],
   selectedResultChannels: [],
   resultData: null,
   resultView: 'time',
+  hiddenResultSeries: new Set(),
   resultLoading: false,
   resultError: '',
+  followRunLog: true,
   resultScenarioFilter: 'all',
+  linearizationCatalog: { files: [], count: 0 },
+  selectedLinearizationFile: '',
+  linearizationData: null,
+  linearizationLoading: false,
+  visualizationCatalog: { files: [], count: 0 },
+  selectedVisualizationFile: '',
+  visualizationData: null,
+  vtkLoading: false,
+  externalTools: [],
+  toolInputs: [],
+  toolInputDocument: null,
+  externalToolJob: null,
+  externalToolPollTimer: null,
   jsonDirty: false
 };
 
@@ -90,6 +113,7 @@ const HYDRO_VISIBLE_COLUMNS = {
   axial: ['AxCoefID', 'AxCd', 'AxCa', 'AxCp', 'AxFDMod', 'AxVnCOff', 'AxFDLoFSc'],
   joints: ['JointID', 'Jointxi', 'Jointyi', 'Jointzi', 'JointAxID', 'JointOvrlp'],
   prop_sets_cyl: ['PropSetID', 'PropD', 'PropThck'],
+  prop_sets_rec: ['MPropSetID', 'PropA', 'PropB', 'PropThck'],
   members: ['MemberID', 'MJointID1', 'MJointID2', 'MPropSetID1', 'MPropSetID2', 'MSecGeom', 'MSpinOrient', 'MDivSize', 'MCoefMod', 'MHstLMod', 'PropPot'],
   simple_cyl: ['SimplCd', 'SimplCdMG', 'SimplCa', 'SimplCaMG', 'SimplCp', 'SimplCpMG', 'SimplAxCd', 'SimplAxCdMG', 'SimplAxCa', 'SimplAxCaMG', 'SimplAxCp', 'SimplAxCpMG', 'SimplCb', 'SimplCbMG'],
   member_coeffs_cyl: ['MemberID', 'MemberCd1', 'MemberCd2', 'MemberCdMG1', 'MemberCdMG2', 'MemberCa1', 'MemberCa2', 'MemberCaMG1', 'MemberCaMG2', 'MemberCp1', 'MemberCp2', 'MemberCpMG1', 'MemberCpMG2', 'MemberAxCd1', 'MemberAxCd2', 'MemberAxCdMG1', 'MemberAxCdMG2', 'MemberAxCa1', 'MemberAxCa2', 'MemberAxCaMG1', 'MemberAxCaMG2', 'MemberAxCp1', 'MemberAxCp2', 'MemberAxCpMG1', 'MemberAxCpMG2', 'MemberCb1', 'MemberCb2', 'MemberCbMG1', 'MemberCbMG2']
@@ -98,9 +122,14 @@ const HYDRO_TABLE_TITLES = {
   axial: '轴向系数',
   joints: '节点',
   prop_sets_cyl: '圆柱截面属性',
+  prop_sets_rec: '矩形截面属性',
   members: 'Morison 构件',
   simple_cyl: 'Simple Cd/Ca/Cp',
-  member_coeffs_cyl: '成员独立 Cd/Ca/Cp'
+  simple_rec: '矩形 Simple Cd/Ca/Cp',
+  depth_cyl: '圆柱深度系数',
+  depth_rec: '矩形深度系数',
+  member_coeffs_cyl: '成员独立 Cd/Ca/Cp',
+  member_coeffs_rec: '矩形成员独立 Cd/Ca/Cp'
 };
 
 function activeFiles() {
@@ -115,7 +144,8 @@ function activeFiles() {
 }
 
 function targetFormatForRuntime() {
-  return state.meta?.hydroTables?.runtimeFormat === 'v5' ? 'v5' : 'auto_v4_runtime';
+  const hydro = state.meta?.hydroTables || {};
+  return hydro.runtimeFormat === 'v5' && hydro.format === 'v5' ? 'v5' : 'auto_v4_runtime';
 }
 
 function toast(message) {
@@ -221,6 +251,907 @@ function syncQuickInputsToCase() {
   }
 }
 
+function moduleCatalog() {
+  return state.meta?.moduleCatalog || [];
+}
+
+function moduleCacheKey(file) {
+  return `${state.selectedModelId || 'model'}::${file}`;
+}
+
+function currentModuleDocument() {
+  return state.moduleDocuments.get(moduleCacheKey(state.selectedModuleFile)) || null;
+}
+
+function normalizedInputEdits() {
+  const c = currentCase();
+  return Array.isArray(c.input_edits) ? c.input_edits : [];
+}
+
+function normalizedFileOverrides() {
+  const c = currentCase();
+  if (Array.isArray(c.input_file_overrides)) return c.input_file_overrides;
+  if (c.input_file_overrides && typeof c.input_file_overrides === 'object') {
+    c.input_file_overrides = Object.entries(c.input_file_overrides).map(([file, row]) => ({
+      file,
+      ...(typeof row === 'string' ? { content: row } : row)
+    }));
+    return c.input_file_overrides;
+  }
+  return [];
+}
+
+function moduleOverride(file = state.selectedModuleFile) {
+  return normalizedFileOverrides().find(row => row.file === file) || null;
+}
+
+function moduleFileEditCount(file) {
+  const lineEdits = normalizedInputEdits().filter(row => row.file === file).length;
+  const override = moduleOverride(file) ? 1 : 0;
+  const scalarOverrides = Object.keys(currentCase().set?.[file] || {}).length;
+  return lineEdits + override + scalarOverrides;
+}
+
+function moduleTypedValue(raw, type) {
+  if (type === 'boolean') return Boolean(raw);
+  if (type === 'integer') return Number.parseInt(raw, 10);
+  if (type === 'number') return Number(raw);
+  return raw;
+}
+
+function fieldEffectiveValue(field) {
+  const edit = normalizedInputEdits().find(row => row.file === state.selectedModuleFile && Number(row.line) === Number(field.line));
+  if (edit) return edit.value;
+  const setValue = currentCase().set?.[state.selectedModuleFile]?.[field.key];
+  if (setValue !== undefined) return setValue;
+  return field.parsedValue;
+}
+
+function valuesEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right) || String(left) === String(right);
+}
+
+function setModuleFieldEdit(field, value) {
+  const c = currentCase();
+  const file = state.selectedModuleFile;
+  const next = normalizedInputEdits().filter(row => !(row.file === file && Number(row.line) === Number(field.line)));
+  if (!valuesEqual(value, field.parsedValue)) {
+    next.push({
+      file,
+      line: Number(field.line),
+      kind: 'value',
+      key: field.key,
+      path: field.path || field.key,
+      format: field.format || 'openfast',
+      type: field.type || 'string',
+      value
+    });
+  }
+  c.input_edits = next;
+  if (c.set?.[file] && Object.prototype.hasOwnProperty.call(c.set[file], field.key)) {
+    delete c.set[file][field.key];
+    if (!Object.keys(c.set[file]).length) delete c.set[file];
+  }
+  cleanupEmptyModuleEdits(c);
+  renderModuleWorkspace();
+  renderJson();
+}
+
+function setModuleLineEdit(lineNumber, text, originalText) {
+  const c = currentCase();
+  const file = state.selectedModuleFile;
+  const next = normalizedInputEdits().filter(row => !(row.file === file && Number(row.line) === Number(lineNumber)));
+  if (String(text) !== String(originalText)) {
+    next.push({ file, line: Number(lineNumber), kind: 'line', text: String(text) });
+  }
+  c.input_edits = next;
+  cleanupEmptyModuleEdits(c);
+  renderModuleWorkspace();
+  renderJson();
+}
+
+function cleanupEmptyModuleEdits(c = currentCase()) {
+  if (!Array.isArray(c.input_edits) || !c.input_edits.length) delete c.input_edits;
+  if (!Array.isArray(c.input_file_overrides) || !c.input_file_overrides.length) delete c.input_file_overrides;
+}
+
+function resetModuleFileEdits() {
+  const c = currentCase();
+  const file = state.selectedModuleFile;
+  if (!file) return;
+  c.input_edits = normalizedInputEdits().filter(row => row.file !== file);
+  c.input_file_overrides = normalizedFileOverrides().filter(row => row.file !== file);
+  if (c.set?.[file]) delete c.set[file];
+  cleanupEmptyModuleEdits(c);
+  renderModuleWorkspace();
+  renderAdvancedRows();
+  renderJson();
+  toast(`已恢复 ${file}`);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function jsFormattedValue(value, oldValue = '') {
+  if (typeof value === 'boolean') return value ? 'True' : 'False';
+  const text = String(value);
+  const old = String(oldValue).trim();
+  if (old.startsWith('"') && old.endsWith('"') && !(text.startsWith('"') && text.endsWith('"'))) return `"${text}"`;
+  if (old.startsWith("'") && old.endsWith("'") && !(text.startsWith("'") && text.endsWith("'"))) return `'${text}'`;
+  return text;
+}
+
+function replaceDocumentFieldLine(line, edit) {
+  if (edit.format === 'yaml') {
+    const pattern = new RegExp(`^(\\s*)(${escapeRegExp(edit.key)}):(\\s*)(.*?)(\\s+#.*)?$`);
+    const match = line.match(pattern);
+    if (!match) return line;
+    return `${match[1]}${match[2]}:${match[3] || ' '}${jsFormattedValue(edit.value, match[4])}${match[5] || ''}`;
+  }
+  const pattern = new RegExp(`^(\\s*)(.*?)(\\s+)(${escapeRegExp(edit.key)})(\\s*(?:-.*)?)$`);
+  const match = line.match(pattern);
+  if (!match) return line;
+  return `${match[1]}${jsFormattedValue(edit.value, match[2])}${match[3]}${match[4]}${match[5]}`;
+}
+
+function effectiveModuleContent(doc) {
+  const override = moduleOverride(doc.file);
+  const source = override?.content ?? doc.content;
+  const newline = source.includes('\r\n') ? '\r\n' : '\n';
+  const trailing = source.endsWith('\n');
+  const lines = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (trailing) lines.pop();
+  for (const edit of normalizedInputEdits().filter(row => row.file === doc.file)) {
+    const index = Number(edit.line) - 1;
+    if (index < 0 || index >= lines.length) continue;
+    lines[index] = edit.kind === 'line' ? String(edit.text ?? '') : replaceDocumentFieldLine(lines[index], edit);
+  }
+  return lines.join(newline) + (trailing ? newline : '');
+}
+
+function saveModuleSourceOverride() {
+  const document = currentModuleDocument();
+  if (!document) return;
+  const c = currentCase();
+  const file = document.file;
+  const content = $('moduleSourceEditor').value;
+  const next = normalizedFileOverrides().filter(row => row.file !== file);
+  if (content !== document.content) {
+    next.push({
+      file,
+      source_sha256: document.sha256,
+      newline: content.includes('\r\n') ? 'crlf' : document.newline,
+      content
+    });
+  }
+  c.input_file_overrides = next;
+  c.input_edits = normalizedInputEdits().filter(row => row.file !== file);
+  cleanupEmptyModuleEdits(c);
+  renderModuleWorkspace();
+  renderJson();
+  toast(content === document.content ? '原文与模板一致' : '已保存原文覆盖');
+}
+
+async function loadModuleDocument(file) {
+  if (!file) return;
+  state.selectedModuleFile = file;
+  const key = moduleCacheKey(file);
+  if (state.moduleDocuments.has(key)) {
+    state.moduleError = '';
+    renderModuleWorkspace();
+    return;
+  }
+  state.moduleLoading = true;
+  state.moduleError = '';
+  renderModuleWorkspace();
+  try {
+    const params = new URLSearchParams({ file });
+    if (state.selectedModelId) params.set('model', state.selectedModelId);
+    const document = await api(`/api/module?${params}`);
+    state.moduleDocuments.set(key, document);
+  } catch (error) {
+    state.moduleError = error.message;
+  } finally {
+    state.moduleLoading = false;
+    renderModuleWorkspace();
+  }
+}
+
+function renderModuleCoverage() {
+  const wrap = $('moduleCoverage');
+  if (!wrap) return;
+  const rows = state.meta?.capabilityMatrix || [];
+  const available = rows.filter(row => row.available).length;
+  $('moduleCoverageSummary').textContent = `${available}/${rows.length} 个插件在当前模型中有文件；其余插件可在导入对应模型后启用。`;
+  wrap.innerHTML = '';
+  for (const row of rows) {
+    const item = document.createElement('span');
+    item.className = `module-capability ${row.available ? 'available' : 'absent'}`;
+    item.textContent = row.name;
+    item.title = row.available ? row.files.join('\n') : `Stage ${row.stage} · 当前模型未引用`;
+    wrap.appendChild(item);
+  }
+}
+
+function renderModuleFileList() {
+  const wrap = $('moduleFileList');
+  const query = state.moduleFileQuery.trim().toLowerCase();
+  const rows = moduleCatalog().filter(row => !query || `${row.file} ${row.pluginName} ${row.category}`.toLowerCase().includes(query));
+  wrap.innerHTML = '';
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty-state">没有匹配的模块文件</div>';
+    return;
+  }
+  let lastPlugin = '';
+  for (const row of rows) {
+    if (row.pluginId !== lastPlugin) {
+      const heading = document.createElement('div');
+      heading.className = 'module-file-group';
+      heading.textContent = `Stage ${row.stage} · ${row.pluginName}`;
+      wrap.appendChild(heading);
+      lastPlugin = row.pluginId;
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `module-file-item ${row.file === state.selectedModuleFile ? 'active' : ''}`;
+    const edits = moduleFileEditCount(row.file);
+    button.innerHTML = `<span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.file)}</small></span><span class="module-file-count">${row.fields}${edits ? ` · ${edits} 改` : ''}</span>`;
+    button.onclick = () => loadModuleDocument(row.file);
+    wrap.appendChild(button);
+  }
+}
+
+function createModuleFieldControl(field) {
+  const value = fieldEffectiveValue(field);
+  let control;
+  if (field.type === 'boolean') {
+    control = document.createElement('input');
+    control.type = 'checkbox';
+    control.checked = value === true || String(value).toLowerCase() === 'true';
+    control.onchange = () => setModuleFieldEdit(field, control.checked);
+  } else if (Array.isArray(field.options) && field.options.length) {
+    control = document.createElement('select');
+    const current = String(value);
+    const options = [...field.options];
+    if (!options.some(option => String(option) === current)) options.unshift(value);
+    for (const option of options) {
+      const element = document.createElement('option');
+      element.value = String(option);
+      element.textContent = String(option);
+      control.appendChild(element);
+    }
+    control.value = current;
+    control.onchange = () => setModuleFieldEdit(field, moduleTypedValue(control.value, field.type));
+  } else {
+    control = document.createElement('input');
+    control.type = ['integer', 'number'].includes(field.type) ? 'number' : 'text';
+    if (control.type === 'number') control.step = 'any';
+    control.value = value ?? '';
+    control.onchange = () => setModuleFieldEdit(field, moduleTypedValue(control.value, field.type));
+  }
+  control.setAttribute('aria-label', field.path || field.key);
+  return control;
+}
+
+function renderModuleFields(doc) {
+  const wrap = $('moduleFieldGroups');
+  wrap.innerHTML = '';
+  const query = state.moduleFieldQuery.trim().toLowerCase();
+  const fields = (doc.fields || []).filter(field => !query || `${field.path} ${field.key} ${field.description} ${field.line}`.toLowerCase().includes(query));
+  const groups = new Map();
+  for (const field of fields) {
+    const key = field.section || 'Input';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(field);
+  }
+  if (!fields.length) {
+    wrap.innerHTML = '<div class="empty-state">没有匹配的标量参数；表格和原文仍可编辑。</div>';
+    return;
+  }
+  for (const [section, rows] of groups) {
+    const block = document.createElement('section');
+    block.className = 'module-section';
+    const head = document.createElement('header');
+    head.innerHTML = `<h3>${escapeHtml(section)}</h3><span>${rows.length} fields</span>`;
+    block.appendChild(head);
+    const list = document.createElement('div');
+    list.className = 'module-field-list';
+    for (const field of rows) {
+      const row = document.createElement('label');
+      row.className = 'module-field-row';
+      const edited = normalizedInputEdits().some(edit => edit.file === doc.file && Number(edit.line) === Number(field.line));
+      if (edited) row.classList.add('edited');
+      const key = document.createElement('span');
+      key.className = 'module-field-key';
+      key.innerHTML = `<strong>${escapeHtml(field.path || field.key)}</strong><small>line ${field.line}${field.unit ? ` · ${escapeHtml(field.unit)}` : ''}</small>`;
+      const controlWrap = document.createElement('span');
+      controlWrap.className = 'module-field-control';
+      controlWrap.appendChild(createModuleFieldControl(field));
+      const description = document.createElement('span');
+      description.className = 'module-field-description';
+      description.textContent = field.description || 'No description in source file';
+      row.append(key, controlWrap, description);
+      list.appendChild(row);
+    }
+    block.appendChild(list);
+    wrap.appendChild(block);
+  }
+}
+
+function tokenizeModuleLine(text) {
+  return String(text).trim().match(/"[^"]*"|'[^']*'|\S+/g) || [];
+}
+
+function effectiveLineText(row) {
+  const edit = normalizedInputEdits().find(item => item.file === state.selectedModuleFile && Number(item.line) === Number(row.line));
+  return edit?.kind === 'line' ? String(edit.text) : row.text;
+}
+
+function renderModuleTables(doc) {
+  const wrap = $('moduleTableGroups');
+  wrap.innerHTML = '';
+  for (const table of doc.tables || []) {
+    const details = document.createElement('details');
+    details.className = 'module-data-block';
+    if ((doc.tables || []).length <= 3) details.open = true;
+    const summary = document.createElement('summary');
+    summary.innerHTML = `<span>${escapeHtml(table.title)}</span><small>${table.rows.length} rows · lines ${table.headerLine}-${table.rows.at(-1)?.line || table.unitsLine}</small>`;
+    details.appendChild(summary);
+    const scroller = document.createElement('div');
+    scroller.className = 'module-table-scroll';
+    const grid = document.createElement('table');
+    grid.className = 'module-source-table';
+    const head = document.createElement('thead');
+    head.innerHTML = `<tr>${table.columns.map((column, index) => `<th>${escapeHtml(column)}<small>${escapeHtml(table.units[index] || '')}</small></th>`).join('')}</tr>`;
+    grid.appendChild(head);
+    const body = document.createElement('tbody');
+    for (const sourceRow of table.rows) {
+      const tr = document.createElement('tr');
+      const tokens = tokenizeModuleLine(effectiveLineText(sourceRow));
+      table.columns.forEach((column, columnIndex) => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.value = tokens[columnIndex] ?? '';
+        input.title = `${column} · line ${sourceRow.line}`;
+        input.onchange = () => {
+          const next = [...tokens];
+          while (next.length < table.columns.length) next.push('');
+          next[columnIndex] = input.value;
+          const indent = sourceRow.text.match(/^\s*/)?.[0] || '';
+          setModuleLineEdit(sourceRow.line, `${indent}${next.join('  ')}`, sourceRow.text);
+        };
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    }
+    grid.appendChild(body);
+    scroller.appendChild(grid);
+    details.appendChild(scroller);
+    wrap.appendChild(details);
+  }
+}
+
+function matrixLineText(sourceRow, values) {
+  const indent = sourceRow.text.match(/^\s*/)?.[0] || '';
+  const tokens = tokenizeModuleLine(sourceRow.text);
+  const tail = tokens.slice(6).join(' ');
+  const body = values.map(value => Number(value).toExponential(6)).join('  ');
+  return `${indent}${body}${tail ? `  ${tail}` : ''}`;
+}
+
+function renderModuleMatrices(doc) {
+  const wrap = $('moduleMatrixGroups');
+  wrap.innerHTML = '';
+  for (const matrix of doc.matrices || []) {
+    const details = document.createElement('details');
+    details.className = 'module-data-block module-matrix-block';
+    const summary = document.createElement('summary');
+    summary.innerHTML = `<span>${escapeHtml(matrix.title)}</span><small>6 × 6 · line ${matrix.startLine}</small>`;
+    details.appendChild(summary);
+    const grid = document.createElement('div');
+    grid.className = 'generic-matrix-grid';
+    matrix.rows.forEach((sourceRow, rowIndex) => {
+      const effectiveTokens = tokenizeModuleLine(effectiveLineText(sourceRow));
+      const values = sourceRow.values.map((value, index) => Number(effectiveTokens[index] ?? value));
+      values.forEach((value, columnIndex) => {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = 'any';
+        input.value = String(value);
+        input.title = `r${rowIndex + 1} c${columnIndex + 1} · line ${sourceRow.line}`;
+        input.onchange = () => {
+          const next = [...values];
+          next[columnIndex] = Number(input.value || 0);
+          setModuleLineEdit(sourceRow.line, matrixLineText(sourceRow, next), sourceRow.text);
+        };
+        grid.appendChild(input);
+      });
+    });
+    details.appendChild(grid);
+    wrap.appendChild(details);
+  }
+}
+
+function setModuleMode(mode) {
+  state.moduleMode = mode === 'source' ? 'source' : 'form';
+  renderModuleWorkspace();
+}
+
+function moduleValidationMessages(doc) {
+  const values = Object.fromEntries((doc.fields || []).map(field => [field.key, fieldEffectiveValue(field)]));
+  const plugin = doc.plugin?.id;
+  const messages = [];
+  const number = key => Number(values[key]);
+  const missing = key => values[key] == null || ['', 'none', 'unused', 'null'].includes(String(values[key]).replaceAll('"', '').toLowerCase());
+  if (plugin === 'openfast') {
+    if (Number.isFinite(number('TMax')) && number('TMax') < 0) messages.push(['error', 'TMax 不能小于 0。']);
+    if (Number.isFinite(number('DT')) && number('DT') <= 0) messages.push(['error', 'DT 必须大于 0。']);
+  }
+  if (plugin === 'inflowwind') {
+    const mode = number('WindType');
+    if (mode === 1 && number('HWindSpeed') <= 0) messages.push(['error', 'WindType=1 时 HWindSpeed 必须大于 0。']);
+    if (mode === 2 && missing('Filename_Uni')) messages.push(['error', 'WindType=2 需要 Filename_Uni。']);
+    if (mode === 3 && missing('FileName_BTS')) messages.push(['error', 'WindType=3 需要 TurbSim .bts 文件。']);
+    if ([4, 7].includes(mode) && missing('FilenameRoot')) messages.push(['error', `WindType=${mode} 需要 FilenameRoot。`]);
+  }
+  if (plugin === 'seastate') {
+    const mode = number('WaveMod');
+    if ([1, 2].includes(mode) && number('WaveHs') <= 0) messages.push(['error', '当前 WaveMod 需要 WaveHs > 0。']);
+    if ([1, 2].includes(mode) && number('WaveTp') <= 0) messages.push(['error', '当前 WaveMod 需要 WaveTp > 0。']);
+    if (mode > 0 && Number.isFinite(number('WaveTMax')) && number('WaveTMax') <= 0) messages.push(['error', 'WaveTMax 必须大于 0。']);
+  }
+  if (plugin === 'hydrodyn' && number('PotMod') === 1 && missing('PotFile')) messages.push(['error', 'PotMod=1 需要 PotFile 水动力系数根路径。']);
+  if (plugin === 'aerodyn' && number('Wake_Mod') === 3 && missing('OLAFInputFile')) messages.push(['error', 'Wake_Mod=3 需要 OLAFInputFile。']);
+  if (plugin === 'servodyn' && [number('PCMode'), number('VSContrl'), number('YCMode')].includes(5) && missing('DLL_FileName')) messages.push(['error', 'DLL 控制模式需要 DLL_FileName。']);
+  if (plugin === 'beamdyn' && Number.isFinite(number('kp_total')) && number('kp_total') < 3) messages.push(['error', 'BeamDyn kp_total 至少为 3。']);
+  if (plugin === 'turbsim') {
+    if (number('TimeStep') <= 0) messages.push(['error', 'TurbSim TimeStep 必须大于 0。']);
+    if (number('AnalysisTime') <= 0) messages.push(['error', 'TurbSim AnalysisTime 必须大于 0。']);
+  }
+  if (plugin === 'fastfarm') {
+    if (number('TMax') < 0) messages.push(['error', 'FAST.Farm TMax 不能小于 0。']);
+    if (number('NumTurbines') < 1) messages.push(['error', 'FAST.Farm NumTurbines 至少为 1。']);
+  }
+  return messages;
+}
+
+function renderModuleValidation(doc) {
+  const wrap = $('moduleValidation');
+  const messages = moduleValidationMessages(doc);
+  wrap.hidden = !messages.length;
+  wrap.innerHTML = messages.map(([kind, message]) => `<div class="${kind}">${escapeHtml(message)}</div>`).join('');
+}
+
+function renderModuleEditor() {
+  const doc = currentModuleDocument();
+  $('moduleLoading').hidden = !state.moduleLoading;
+  $('moduleError').hidden = !state.moduleError;
+  $('moduleError').textContent = state.moduleError;
+  $('moduleFormMode').classList.toggle('active', state.moduleMode === 'form');
+  $('moduleSourceMode').classList.toggle('active', state.moduleMode === 'source');
+  $('moduleStructuredView').hidden = state.moduleMode !== 'form';
+  $('moduleSourceView').hidden = state.moduleMode !== 'source';
+  $('moduleFieldSearch').hidden = state.moduleMode !== 'form';
+  if (!doc) {
+    $('moduleEditorStage').textContent = state.moduleLoading ? '读取中' : '选择输入文件';
+    $('moduleEditorTitle').textContent = '模块编辑器';
+    $('moduleEditorDescription').textContent = '从左侧选择模块文件。';
+    $('moduleDocsLink').hidden = true;
+    $('moduleResetEditsBtn').disabled = true;
+    $('moduleFieldGroups').innerHTML = '';
+    $('moduleTableGroups').innerHTML = '';
+    $('moduleMatrixGroups').innerHTML = '';
+    $('moduleValidation').hidden = true;
+    return;
+  }
+  const plugin = doc.plugin || {};
+  $('moduleEditorStage').textContent = `Stage ${plugin.stage || 1} · ${plugin.category || 'module'} · ${doc.lineCount} lines`;
+  $('moduleEditorTitle').textContent = `${plugin.name || 'Module'} · ${doc.file}`;
+  $('moduleEditorDescription').textContent = plugin.description || '';
+  $('moduleDocsLink').hidden = !plugin.docs;
+  $('moduleDocsLink').href = plugin.docs || '#';
+  $('moduleResetEditsBtn').disabled = moduleFileEditCount(doc.file) === 0;
+  $('moduleEditStatus').textContent = `${doc.fields.length} 参数 · ${doc.tables.length} 表格 · ${doc.matrices.length} 矩阵 · ${moduleFileEditCount(doc.file)} 修改`;
+  renderModuleValidation(doc);
+  if (state.moduleMode === 'source') {
+    const next = effectiveModuleContent(doc);
+    if ($('moduleSourceEditor').value !== next) $('moduleSourceEditor').value = next;
+  } else {
+    renderModuleFields(doc);
+    renderModuleTables(doc);
+    renderModuleMatrices(doc);
+  }
+}
+
+function renderModuleWorkspace() {
+  if (!$('moduleCoverage')) return;
+  const availableFiles = new Set(moduleCatalog().map(row => row.file));
+  if (!availableFiles.has(state.selectedModuleFile)) {
+    state.selectedModuleFile = moduleCatalog().find(row => row.file === activeFiles().fst)?.file || moduleCatalog()[0]?.file || '';
+  }
+  renderModuleCoverage();
+  renderModuleFileList();
+  renderModuleEditor();
+  if (state.selectedModuleFile && !currentModuleDocument() && !state.moduleLoading && !state.moduleError) {
+    queueMicrotask(() => loadModuleDocument(state.selectedModuleFile));
+  }
+}
+
+async function loadEngineeringCatalogs() {
+  const [linearizations, visualizations] = await Promise.all([
+    api('/api/linearizations'),
+    api('/api/visualizations')
+  ]);
+  state.linearizationCatalog = linearizations;
+  state.visualizationCatalog = visualizations;
+  const linearIds = new Set((linearizations.files || []).map(row => row.id));
+  if (!linearIds.has(state.selectedLinearizationFile)) state.selectedLinearizationFile = linearizations.files?.[0]?.id || '';
+  const vtkIds = new Set((visualizations.files || []).map(row => row.id));
+  if (!vtkIds.has(state.selectedVisualizationFile)) state.selectedVisualizationFile = visualizations.files?.[0]?.id || '';
+  renderEngineeringWorkspace();
+}
+
+function renderLinearizationWorkspace() {
+  const files = state.linearizationCatalog?.files || [];
+  const select = $('linearizationFileSelect');
+  select.innerHTML = '';
+  for (const row of files) {
+    const option = document.createElement('option');
+    option.value = row.id;
+    option.textContent = `${row.scenario}/${row.case} · ${row.name}`;
+    select.appendChild(option);
+  }
+  select.value = state.selectedLinearizationFile;
+  select.disabled = !files.length || state.linearizationLoading;
+  $('linearizationAnalyzeBtn').disabled = !files.length || state.linearizationLoading;
+  $('linearizationEmpty').hidden = files.length > 0;
+  $('linearizationStatus').textContent = state.linearizationLoading
+    ? '正在解析状态矩阵...'
+    : `${files.length} 个 .lin 文件${state.linearizationData ? ` · ${state.linearizationData.modes?.length || 0} 个模态` : ''}`;
+  const result = state.linearizationData;
+  $('linearizationResults').hidden = !result;
+  if (!result) return;
+  const modes = result.modes || [];
+  const unstable = modes.filter(mode => !mode.stable).length;
+  const metrics = [
+    ['Time', result.simulationTime == null ? 'n/a' : `${Number(result.simulationTime).toFixed(3)} s`],
+    ['States', result.counts?.continuousStates ?? 0],
+    ['A matrix', (result.matrixShapes?.A || []).join(' × ') || 'missing'],
+    ['Modes', modes.length],
+    ['Unstable', unstable]
+  ];
+  $('linearizationSummary').innerHTML = metrics.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+  $('linearizationTableBody').innerHTML = modes.map(mode => `
+    <tr class="${mode.stable ? '' : 'unstable'}">
+      <td>${mode.mode}</td>
+      <td>${Number(mode.frequencyHz).toFixed(5)}</td>
+      <td>${Number(mode.naturalFrequencyHz).toFixed(5)}</td>
+      <td>${(Number(mode.dampingRatio) * 100).toFixed(3)}%</td>
+      <td>${Number(mode.real).toExponential(4)}</td>
+      <td>${Number(mode.imag).toExponential(4)}</td>
+      <td>${escapeHtml(mode.dominantState)}</td>
+      <td>${mode.stable ? 'yes' : 'no'}</td>
+    </tr>`).join('');
+  requestAnimationFrame(drawLinearizationChart);
+}
+
+function drawLinearizationChart() {
+  const canvas = $('linearizationCanvas');
+  const modes = state.linearizationData?.modes || [];
+  if (!canvas || !modes.length || canvas.clientWidth <= 0) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(480, canvas.clientWidth);
+  const height = 280;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#f7f9fa';
+  ctx.fillRect(0, 0, width, height);
+  const margin = { left: 58, right: 22, top: 24, bottom: 42 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const maxFrequency = Math.max(...modes.map(mode => Number(mode.naturalFrequencyHz) || 0), 0.1) * 1.08;
+  const dampingValues = modes.map(mode => Number(mode.dampingRatio) * 100).filter(Number.isFinite);
+  const minDamping = Math.min(0, ...dampingValues) - 2;
+  const maxDamping = Math.max(10, ...dampingValues) + 2;
+  const x = value => margin.left + (value / maxFrequency) * plotWidth;
+  const y = value => margin.top + ((maxDamping - value) / (maxDamping - minDamping)) * plotHeight;
+  ctx.strokeStyle = '#ccd7da';
+  ctx.lineWidth = 1;
+  for (let tick = 0; tick <= 5; tick += 1) {
+    const px = margin.left + plotWidth * tick / 5;
+    ctx.beginPath(); ctx.moveTo(px, margin.top); ctx.lineTo(px, margin.top + plotHeight); ctx.stroke();
+    ctx.fillStyle = '#617078'; ctx.font = '11px ui-monospace, monospace'; ctx.textAlign = 'center';
+    ctx.fillText((maxFrequency * tick / 5).toFixed(2), px, height - 18);
+  }
+  for (let tick = 0; tick <= 4; tick += 1) {
+    const value = minDamping + (maxDamping - minDamping) * tick / 4;
+    const py = y(value);
+    ctx.beginPath(); ctx.moveTo(margin.left, py); ctx.lineTo(width - margin.right, py); ctx.stroke();
+    ctx.fillStyle = '#617078'; ctx.textAlign = 'right';
+    ctx.fillText(`${value.toFixed(1)}%`, margin.left - 8, py + 4);
+  }
+  if (minDamping < 0 && maxDamping > 0) {
+    ctx.strokeStyle = '#b14134'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(margin.left, y(0)); ctx.lineTo(width - margin.right, y(0)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  modes.forEach(mode => {
+    ctx.beginPath();
+    ctx.arc(x(Number(mode.naturalFrequencyHz)), y(Number(mode.dampingRatio) * 100), 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = mode.stable ? '#14756e' : '#b14134';
+    ctx.fill();
+  });
+  ctx.fillStyle = '#243139'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Natural frequency (Hz)', margin.left + plotWidth / 2, height - 2);
+  ctx.save(); ctx.translate(14, margin.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Damping ratio', 0, 0); ctx.restore();
+}
+
+async function analyzeSelectedLinearization() {
+  const file = $('linearizationFileSelect').value;
+  if (!file) return;
+  state.selectedLinearizationFile = file;
+  state.linearizationLoading = true;
+  state.linearizationData = null;
+  renderLinearizationWorkspace();
+  try {
+    state.linearizationData = await api('/api/linearizations/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ file })
+    });
+  } finally {
+    state.linearizationLoading = false;
+    renderLinearizationWorkspace();
+  }
+}
+
+function ensureVtkViewer() {
+  if (!window.OpenFastVtk || !$('vtkViewport')) return false;
+  window.OpenFastVtk.mount($('vtkViewport'));
+  return true;
+}
+
+function renderVisualizationWorkspace() {
+  const files = state.visualizationCatalog?.files || [];
+  const select = $('vtkFileSelect');
+  select.innerHTML = '';
+  for (const row of files) {
+    const option = document.createElement('option');
+    option.value = row.id;
+    option.textContent = `${row.scenario}/${row.case} · ${row.name}`;
+    select.appendChild(option);
+  }
+  select.value = state.selectedVisualizationFile;
+  select.disabled = !files.length || state.vtkLoading;
+  $('vtkLoadBtn').disabled = !files.length || state.vtkLoading;
+  $('vtkStatus').textContent = state.vtkLoading
+    ? '正在读取几何...'
+    : `${files.length} 个 VTK/VTP/PVD 文件${state.visualizationData?.points ? ` · ${state.visualizationData.points.length} points` : ''}`;
+  $('vtkEmpty').hidden = Boolean(state.visualizationData);
+  if (state.activeTab === 'engineering') requestAnimationFrame(ensureVtkViewer);
+}
+
+async function loadSelectedVisualization(fileId = null) {
+  let file = fileId || $('vtkFileSelect').value;
+  if (!file) return;
+  state.selectedVisualizationFile = file;
+  state.vtkLoading = true;
+  state.visualizationData = null;
+  renderVisualizationWorkspace();
+  try {
+    let payload = await api(`/api/visualizations/geometry?file=${encodeURIComponent(file)}`);
+    if (payload.format === 'pvd') {
+      const frame = (payload.datasets || []).find(row => row.exists);
+      if (!frame) throw new Error('PVD 清单没有可读取的几何帧');
+      file = frame.file;
+      payload = await api(`/api/visualizations/geometry?file=${encodeURIComponent(file)}`);
+      payload.collection = state.selectedVisualizationFile;
+      payload.time = frame.time;
+    }
+    state.visualizationData = payload;
+    if (!ensureVtkViewer()) throw new Error('Three.js 查看器尚未加载');
+    window.OpenFastVtk.setGeometry(payload);
+  } finally {
+    state.vtkLoading = false;
+    renderVisualizationWorkspace();
+  }
+}
+
+function renderEngineeringWorkspace() {
+  if (!$('linearizationFileSelect')) return;
+  renderLinearizationWorkspace();
+  renderVisualizationWorkspace();
+}
+
+async function loadExternalTools() {
+  const [payload, inputs] = await Promise.all([api('/api/tools'), api('/api/tool-inputs')]);
+  state.externalTools = payload.tools || [];
+  state.toolInputs = inputs.files || [];
+  renderToolWorkspace();
+}
+
+function renderToolGenerator() {
+  const kind = $('toolGenerateKind').value;
+  const turbsim = kind === 'turbsim';
+  $('toolGenerateWind').disabled = !turbsim;
+  $('toolGenerateSeed').disabled = !turbsim;
+  $('toolGenerateTurbines').disabled = turbsim;
+  $('toolGenerateSpacing').disabled = turbsim;
+  const wrap = $('toolGeneratedFiles');
+  wrap.innerHTML = '';
+  if (!state.toolInputs.length) {
+    wrap.innerHTML = '<span class="section-kicker">工具输入目录为空</span>';
+    return;
+  }
+  for (const row of state.toolInputs) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'generated-tool-file';
+    button.innerHTML = `<strong>${escapeHtml(row.file)}</strong><span>${escapeHtml(row.kind)} · ${(Number(row.size) / 1024).toFixed(1)} KB</span>`;
+    button.onclick = () => {
+      $('toolInputSource').value = 'workspace';
+      $('toolInputFile').value = row.file;
+      const matching = state.externalTools.find(tool => tool.id === row.kind && tool.runnable);
+      if (matching) $('toolLaunchSelect').value = matching.id;
+      loadToolInputDocument(row.file).catch(error => toast(error.message));
+    };
+    wrap.appendChild(button);
+  }
+  renderToolInputEditor();
+}
+
+function renderToolInputEditor() {
+  const panel = $('toolInputEditor');
+  const doc = state.toolInputDocument;
+  panel.hidden = !doc;
+  if (!doc) return;
+  $('toolInputEditorTitle').textContent = `${doc.plugin?.name || 'Tool input'} · ${doc.file}`;
+  $('toolInputEditorMeta').textContent = `${doc.lineCount} lines · ${doc.fields?.length || 0} fields · ${doc.tables?.length || 0} tables`;
+  if ($('toolInputSourceEditor').value !== doc.content) $('toolInputSourceEditor').value = doc.content;
+}
+
+async function loadToolInputDocument(file) {
+  state.toolInputDocument = await api(`/api/tool-input?file=${encodeURIComponent(file)}`);
+  renderToolInputEditor();
+}
+
+async function saveToolInputDocument() {
+  const doc = state.toolInputDocument;
+  if (!doc) return;
+  const payload = await api('/api/tool-input', {
+    method: 'POST',
+    body: JSON.stringify({
+      file: doc.file,
+      source_sha256: doc.sha256,
+      content: $('toolInputSourceEditor').value
+    })
+  });
+  state.toolInputs = payload.files || state.toolInputs;
+  await loadToolInputDocument(doc.file);
+  toast(`已保存 ${doc.file}`);
+}
+
+async function generateToolInput() {
+  const kind = $('toolGenerateKind').value;
+  const filename = $('toolGenerateFile').value.trim();
+  if (!filename) throw new Error('请输入工具输入文件名');
+  const time = Number($('toolGenerateTime').value || 0);
+  const spec = kind === 'turbsim'
+    ? {
+      analysis_time: time,
+      wind_speed: Number($('toolGenerateWind').value || 8),
+      seed: Number($('toolGenerateSeed').value || 10101),
+      hub_height: 150,
+      grid_height: 252,
+      grid_width: 252,
+      wind_model: 'NTM'
+    }
+    : {
+      tmax: time,
+      turbines: Number($('toolGenerateTurbines').value || 1),
+      spacing: Number($('toolGenerateSpacing').value || 1680),
+      hub_height: 150,
+      rotor_diameter: 240
+    };
+  const payload = await api('/api/tool-inputs/generate', {
+    method: 'POST',
+    body: JSON.stringify({ kind, file: filename, spec, modelId: state.selectedModelId })
+  });
+  state.toolInputs = payload.files || [];
+  $('toolInputSource').value = 'workspace';
+  $('toolInputFile').value = payload.result.file;
+  await loadToolInputDocument(payload.result.file);
+  renderToolWorkspace();
+  toast(`已生成 ${payload.result.file}`);
+}
+
+function renderToolProfiles() {
+  const wrap = $('toolProfileList');
+  wrap.innerHTML = '';
+  for (const tool of state.externalTools) {
+    const row = document.createElement('section');
+    row.className = `tool-profile-row ${tool.exists ? 'ready' : 'missing'}`;
+    const identity = document.createElement('div');
+    identity.className = 'tool-profile-identity';
+    identity.innerHTML = `<span class="tool-status-mark" aria-hidden="true"></span><div><strong>${escapeHtml(tool.name)}</strong><small>${escapeHtml(tool.kind)} · ${(tool.accepts || []).map(escapeHtml).join(', ')}</small></div>`;
+    const description = document.createElement('p');
+    description.textContent = tool.description || '';
+    const controls = document.createElement('div');
+    controls.className = 'tool-profile-controls';
+    const input = document.createElement('input');
+    input.value = tool.path || '';
+    input.placeholder = '可执行文件或库文件路径';
+    input.setAttribute('aria-label', `${tool.name} path`);
+    const save = document.createElement('button');
+    save.className = 'mini-button';
+    save.textContent = '保存路径';
+    save.onclick = async () => {
+      await api('/api/tools', { method: 'POST', body: JSON.stringify({ id: tool.id, path: input.value.trim() }) });
+      await loadExternalTools();
+      toast(`${tool.name} 路径已更新`);
+    };
+    controls.append(input, save);
+    row.append(identity, description, controls);
+    wrap.appendChild(row);
+  }
+}
+
+function renderToolLauncher() {
+  const select = $('toolLaunchSelect');
+  const previous = select.value;
+  select.innerHTML = '';
+  for (const tool of state.externalTools.filter(row => row.kind === 'process')) {
+    const option = document.createElement('option');
+    option.value = tool.id;
+    option.textContent = `${tool.name} · ${tool.runnable ? 'ready' : 'not installed'}`;
+    option.disabled = !tool.runnable;
+    select.appendChild(option);
+  }
+  if ([...select.options].some(option => option.value === previous && !option.disabled)) select.value = previous;
+  else select.value = [...select.options].find(option => !option.disabled)?.value || '';
+  $('toolRunBtn').disabled = !select.value;
+}
+
+function renderToolWorkspace() {
+  if (!$('toolProfileList')) return;
+  renderToolGenerator();
+  renderToolProfiles();
+  renderToolLauncher();
+}
+
+async function startExternalTool() {
+  const toolId = $('toolLaunchSelect').value;
+  const inputFile = $('toolInputFile').value.trim();
+  if (!toolId || !inputFile) throw new Error('请选择工具并填写相对输入文件');
+  const payload = await api('/api/tool-jobs', {
+    method: 'POST',
+    body: JSON.stringify({
+      toolId,
+      inputFile,
+      source: $('toolInputSource').value,
+      modelId: state.selectedModelId
+    })
+  });
+  state.externalToolJob = payload.jobId;
+  $('toolRunLog').textContent = '工具已排队。';
+  pollExternalTool();
+}
+
+async function pollExternalTool() {
+  if (!state.externalToolJob) return;
+  if (state.externalToolPollTimer) clearTimeout(state.externalToolPollTimer);
+  const job = await api(`/api/jobs/${state.externalToolJob}`);
+  $('toolRunLog').textContent = job.output || `${job.status}...`;
+  if (['queued', 'running'].includes(job.status)) {
+    state.externalToolPollTimer = setTimeout(pollExternalTool, 900);
+  } else {
+    toast(job.status === 'done' ? '外部工具运行完成' : '外部工具运行失败');
+    await Promise.all([loadExternalTools(), loadEngineeringCatalogs(), loadResultsCatalog()]);
+  }
+}
+
 function renderAll() {
   normalizeScenario();
   $('workspacePath').textContent = state.meta?.root || '';
@@ -240,13 +1171,30 @@ function renderAll() {
   renderFocalWaveReproduction();
   renderModuleSwitches();
   renderAdvancedRows();
+  renderModuleWorkspace();
   renderModelStructure();
   renderOutlistEditor();
   renderHydroTables();
   renderCatalog();
   renderResultsWorkspace();
+  renderEngineeringWorkspace();
+  renderToolWorkspace();
   renderJson();
+  renderSaveState();
   setActiveTab(state.activeTab, false);
+}
+
+function scenarioFingerprint() {
+  return JSON.stringify(state.scenario);
+}
+
+function renderSaveState() {
+  const button = $('saveBtn');
+  if (!button) return;
+  const dirty = state.jsonDirty || (state.savedScenarioFingerprint && state.savedScenarioFingerprint !== scenarioFingerprint());
+  button.classList.toggle('has-unsaved-changes', dirty);
+  button.textContent = dirty ? '保存场景 · 未保存' : '保存场景';
+  button.setAttribute('aria-label', dirty ? '保存场景，存在未保存修改' : '保存场景，当前修改已保存');
 }
 
 function renderReferenceFigures() {
@@ -672,15 +1620,30 @@ function renderResultCharts() {
     const figure = document.createElement('figure');
     figure.className = 'result-chart-block';
     const caption = document.createElement('figcaption');
-    caption.innerHTML = `<strong>${state.resultView === 'psd' ? '功率谱密度' : '时程'} · ${escapeHtml(unit)}</strong><span>${entries.length} traces</span>`;
+    const visibleEntries = entries.filter(entry => !state.hiddenResultSeries.has(entry.label));
+    caption.innerHTML = `<strong>${state.resultView === 'psd' ? '功率谱密度' : '时程'} · ${escapeHtml(unit)}</strong><span>${visibleEntries.length} / ${entries.length} traces</span>`;
     const canvas = document.createElement('canvas');
     canvas.setAttribute('aria-label', `${state.resultView} ${unit} chart`);
     const legend = document.createElement('div');
     legend.className = 'result-chart-legend';
-    legend.innerHTML = entries.map(entry => `<span><i style="background:${resultColor(entry.label)}"></i>${escapeHtml(entry.label)}</span>`).join('');
+    for (const entry of entries) {
+      const item = document.createElement('button');
+      const isHidden = state.hiddenResultSeries.has(entry.label);
+      item.type = 'button';
+      item.className = `result-legend-item${isHidden ? ' is-hidden' : ''}`;
+      item.setAttribute('aria-pressed', String(!isHidden));
+      item.title = isHidden ? '显示曲线' : '隐藏曲线';
+      item.innerHTML = `<i style="background:${resultColor(entry.label)}"></i><span>${escapeHtml(entry.label)}</span>`;
+      item.onclick = () => {
+        if (state.hiddenResultSeries.has(entry.label)) state.hiddenResultSeries.delete(entry.label);
+        else state.hiddenResultSeries.add(entry.label);
+        renderResultCharts();
+      };
+      legend.appendChild(item);
+    }
     figure.append(caption, canvas, legend);
     wrap.appendChild(figure);
-    requestAnimationFrame(() => drawResultCanvas(canvas, entries, state.resultView, unit));
+    requestAnimationFrame(() => drawResultCanvas(canvas, visibleEntries, state.resultView, unit));
   }
 }
 
@@ -891,7 +1854,11 @@ function renderJobState(job = { status: 'idle' }) {
   }
   if ($('runLog')) {
     $('runLog').textContent = job.output || (active ? '等待 OpenFAST 输出...' : status === 'idle' ? '尚未运行任务。' : '任务没有控制台输出。');
-    if (active) $('runLog').scrollTop = $('runLog').scrollHeight;
+    if ($('runLogMeta')) {
+      const lines = job.output ? job.output.split(/\r?\n/).filter(Boolean).length : 0;
+      $('runLogMeta').textContent = active ? `${lines} 行实时输出${state.followRunLog ? ' · 正在跟随' : ' · 已暂停跟随'}` : lines ? `${lines} 行任务输出` : '暂无控制台输出';
+    }
+    if (active && state.followRunLog) $('runLog').scrollTop = $('runLog').scrollHeight;
   }
   state.jobRunning = active;
   setJobButtons(!active);
@@ -1586,6 +2553,38 @@ function deleteHydroRow(tableName, index) {
   renderJson();
 }
 
+function addHydroTableRow(tableName) {
+  const payload = ensureCaseHydroTables();
+  const tables = payload.tables;
+  if (!Array.isArray(tables[tableName])) tables[tableName] = [];
+  const schema = hydroSchemas()[tableName] || HYDRO_VISIBLE_COLUMNS[tableName] || [];
+  const row = {};
+  const memberCandidates = (tables.members || []).map(member => Number(member.MemberID)).filter(Number.isFinite);
+  const existingMemberIds = new Set(tables[tableName].map(item => Number(item.MemberID)).filter(Number.isFinite));
+  for (const field of schema) {
+    if (field === 'AxCoefID') row[field] = nextHydroId(tables[tableName], field);
+    else if (field === 'JointID') row[field] = nextHydroId(tables[tableName], field);
+    else if (field === 'PropSetID' || field === 'MPropSetID') row[field] = nextHydroId(tables[tableName], field);
+    else if (field === 'MemberID') row[field] = memberCandidates.find(id => !existingMemberIds.has(id)) ?? nextHydroId(tables[tableName], field);
+    else if (field === 'MDivSize') row[field] = 0.5;
+    else if (field === 'PropPot') row[field] = false;
+    else if (/Cd|Ca|Cp|Cb/.test(field)) row[field] = 1;
+    else if (field === 'Dpth') row[field] = tables[tableName].length ? Number(tables[tableName].at(-1).Dpth || 0) - 1 : 0;
+    else row[field] = 0;
+  }
+  tables[tableName].push(row);
+  renderHydroTables();
+  renderJson();
+}
+
+function initializeHydroObject(tableName) {
+  const payload = ensureCaseHydroTables();
+  const schema = hydroSchemas()[tableName] || HYDRO_VISIBLE_COLUMNS[tableName] || [];
+  payload.tables[tableName] = Object.fromEntries(schema.map(field => [field, /Cd|Ca|Cp|Cb/.test(field) ? 1 : 0]));
+  renderHydroTables();
+  renderJson();
+}
+
 function nextHydroId(rows, key) {
   const used = rows.map(row => Number(row[key])).filter(Number.isFinite);
   return used.length ? Math.max(...used) + 1 : 1;
@@ -1630,7 +2629,7 @@ function repairHydroReferences(payload) {
   const t = payload?.tables;
   if (!t) return [];
   const warnings = [];
-  for (const name of ['joints', 'prop_sets_cyl', 'member_coeffs_cyl', 'members']) {
+  for (const name of ['joints', 'prop_sets_cyl', 'prop_sets_rec', 'member_coeffs_cyl', 'member_coeffs_rec', 'members']) {
     if (!Array.isArray(t[name])) t[name] = [];
   }
 
@@ -1644,8 +2643,11 @@ function repairHydroReferences(payload) {
   if (fixedJoints.length) warnings.push(`OpenFAST v4 requires JointOvrlp=0; fixed joints ${fixedJoints.join(', ')}`);
 
   const propIds = new Set(t.prop_sets_cyl.map(row => Number(row.PropSetID)).filter(Number.isFinite));
+  const propRecIds = new Set(t.prop_sets_rec.map(row => Number(row.MPropSetID)).filter(Number.isFinite));
   const coeffIds = new Set(t.member_coeffs_cyl.map(row => Number(row.MemberID)).filter(Number.isFinite));
+  const coeffRecIds = new Set(t.member_coeffs_rec.map(row => Number(row.MemberID)).filter(Number.isFinite));
   const coeffFields = hydroSchemas().member_coeffs_cyl || HYDRO_VISIBLE_COLUMNS.member_coeffs_cyl;
+  const coeffRecFields = hydroSchemas().member_coeffs_rec || [];
 
   for (const member of t.members) {
     const memberId = Number(member.MemberID);
@@ -1654,7 +2656,16 @@ function repairHydroReferences(payload) {
     if (member.MHstLMod === undefined) member.MHstLMod = 0;
     if (member.PropPot === undefined) member.PropPot = false;
     const shape = Number(member.MSecGeom || 1);
-    if (shape !== 2) {
+    if (shape === 2) {
+      for (const field of ['MPropSetID1', 'MPropSetID2']) {
+        const propId = Number(member[field]);
+        if (Number.isFinite(propId) && propId > 0 && !propRecIds.has(propId)) {
+          t.prop_sets_rec.push({ MPropSetID: propId, PropA: 6, PropB: 6, PropThck: 0.06 });
+          propRecIds.add(propId);
+          warnings.push(`自动补齐矩形 Member ${memberId} 引用的 MPropSetID ${propId}`);
+        }
+      }
+    } else {
       for (const field of ['MPropSetID1', 'MPropSetID2']) {
         const propId = Number(member[field]);
         if (Number.isFinite(propId) && propId > 0 && !propIds.has(propId)) {
@@ -1664,15 +2675,23 @@ function repairHydroReferences(payload) {
         }
       }
     }
-    if (Number(member.MCoefMod || 1) === 3 && Number.isFinite(memberId) && !coeffIds.has(memberId)) {
-      t.member_coeffs_cyl.push(createMemberCoeffRow(memberId, coeffFields, t.simple_cyl || {}));
-      coeffIds.add(memberId);
-      warnings.push(`自动补齐 Member ${memberId} 的独立系数行`);
+    if (Number(member.MCoefMod || 1) === 3 && Number.isFinite(memberId)) {
+      if (shape === 2 && !coeffRecIds.has(memberId)) {
+        t.member_coeffs_rec.push(createMemberCoeffRow(memberId, coeffRecFields, t.simple_rec || {}));
+        coeffRecIds.add(memberId);
+        warnings.push(`自动补齐矩形 Member ${memberId} 的独立系数行`);
+      } else if (shape !== 2 && !coeffIds.has(memberId)) {
+        t.member_coeffs_cyl.push(createMemberCoeffRow(memberId, coeffFields, t.simple_cyl || {}));
+        coeffIds.add(memberId);
+        warnings.push(`自动补齐 Member ${memberId} 的独立系数行`);
+      }
     }
   }
 
   t.prop_sets_cyl.sort((a, b) => Number(a.PropSetID) - Number(b.PropSetID));
+  t.prop_sets_rec.sort((a, b) => Number(a.MPropSetID) - Number(b.MPropSetID));
   t.member_coeffs_cyl.sort((a, b) => Number(a.MemberID) - Number(b.MemberID));
+  t.member_coeffs_rec.sort((a, b) => Number(a.MemberID) - Number(b.MemberID));
   return warnings;
 }
 
@@ -1686,10 +2705,10 @@ function repairScenarioHydroReferences(scenario) {
   return warnings;
 }
 
-function addDefaultMorisonMember() {
+function addDefaultMorisonMember(sectionGeometry = 1) {
   const payload = ensureCaseHydroTables();
   const t = payload.tables;
-  for (const name of ['axial', 'joints', 'prop_sets_cyl', 'member_coeffs_cyl', 'members']) {
+  for (const name of ['axial', 'joints', 'prop_sets_cyl', 'prop_sets_rec', 'member_coeffs_cyl', 'member_coeffs_rec', 'members']) {
     if (!Array.isArray(t[name])) t[name] = [];
   }
 
@@ -1699,12 +2718,14 @@ function addDefaultMorisonMember() {
   const axId = Number(t.axial[0].AxCoefID) || 1;
   const joint1 = nextHydroId(t.joints, 'JointID');
   const joint2 = joint1 + 1;
-  const propId = nextHydroId(t.prop_sets_cyl, 'PropSetID');
+  const rectangular = Number(sectionGeometry) === 2;
+  const propId = rectangular ? nextHydroId(t.prop_sets_rec, 'MPropSetID') : nextHydroId(t.prop_sets_cyl, 'PropSetID');
   const memberId = nextHydroId(t.members, 'MemberID');
 
   t.joints.push({ JointID: joint1, Jointxi: 0, Jointyi: 0, Jointzi: -20, JointAxID: axId, JointOvrlp: 0 });
   t.joints.push({ JointID: joint2, Jointxi: 0, Jointyi: 0, Jointzi: 10, JointAxID: axId, JointOvrlp: 0 });
-  t.prop_sets_cyl.push({ PropSetID: propId, PropD: 6, PropThck: 0.06 });
+  if (rectangular) t.prop_sets_rec.push({ MPropSetID: propId, PropA: 6, PropB: 6, PropThck: 0.06 });
+  else t.prop_sets_cyl.push({ PropSetID: propId, PropD: 6, PropThck: 0.06 });
 
   t.members.push({
     MemberID: memberId,
@@ -1712,7 +2733,7 @@ function addDefaultMorisonMember() {
     MJointID2: joint2,
     MPropSetID1: propId,
     MPropSetID2: propId,
-    MSecGeom: 1,
+    MSecGeom: rectangular ? 2 : 1,
     MSpinOrient: 0,
     MDivSize: 0.5,
     MCoefMod: 3,
@@ -1720,10 +2741,12 @@ function addDefaultMorisonMember() {
     PropPot: false
   });
 
-  const coeffFields = hydroSchemas().member_coeffs_cyl || HYDRO_VISIBLE_COLUMNS.member_coeffs_cyl;
-  t.member_coeffs_cyl.push(createMemberCoeffRow(memberId, coeffFields, t.simple_cyl || {}));
+  const coeffTable = rectangular ? 'member_coeffs_rec' : 'member_coeffs_cyl';
+  const simpleTable = rectangular ? 'simple_rec' : 'simple_cyl';
+  const coeffFields = hydroSchemas()[coeffTable] || HYDRO_VISIBLE_COLUMNS[coeffTable] || [];
+  t[coeffTable].push(createMemberCoeffRow(memberId, coeffFields, t[simpleTable] || {}));
   renderAll();
-  toast(`已添加 Morison 构件 ${memberId}`);
+  toast(`已添加${rectangular ? '矩形' : '圆柱'} Morison 构件 ${memberId}`);
 }
 
 function hydrodynRuntimeErrors(payload = currentCase().hydrodyn_tables) {
@@ -1734,16 +2757,18 @@ function hydrodynRuntimeErrors(payload = currentCase().hydrodyn_tables) {
   const v4Target = ['auto_v4_runtime', 'v4', 'legacy_v4'].includes(target);
   if (v4Target) {
     if ((t.prop_sets_rec || []).length || (t.depth_rec || []).length || (t.member_coeffs_rec || []).length) {
-      errors.push('当前 openfast_x64.exe 是 v4，不能运行 v5 矩形 HydroDyn 表。');
+      errors.push('当前 HydroDyn 模板按 legacy/v4 表格写出，不能写入 v5 矩形表；请改用原生 v5 HydroDyn 模板。');
     }
     for (const member of t.members || []) {
-      if (Number(member.MSecGeom || 1) === 2) errors.push(`Member ${member.MemberID} 是矩形构件，当前 v4 runtime 不支持。`);
+      if (Number(member.MSecGeom || 1) === 2) errors.push(`Member ${member.MemberID} 是矩形构件，当前 HydroDyn 表格格式不支持。`);
     }
   }
   const memberIds = new Set((t.members || []).map(row => Number(row.MemberID)));
   const coeffIds = new Set((t.member_coeffs_cyl || []).map(row => Number(row.MemberID)));
+  const coeffRecIds = new Set((t.member_coeffs_rec || []).map(row => Number(row.MemberID)));
   const jointIds = new Set((t.joints || []).map(row => Number(row.JointID)));
   const propIds = new Set((t.prop_sets_cyl || []).map(row => Number(row.PropSetID)));
+  const propRecIds = new Set((t.prop_sets_rec || []).map(row => Number(row.MPropSetID)));
   const jointById = new Map((t.joints || []).map(row => [Number(row.JointID), row]));
   const propById = new Map((t.prop_sets_cyl || []).map(row => [Number(row.PropSetID), row]));
   const truthy = value => value === true || value === 1 || ['true', 't', '1', '.true.'].includes(String(value).toLowerCase());
@@ -1756,11 +2781,14 @@ function hydrodynRuntimeErrors(payload = currentCase().hydrodyn_tables) {
     return Number.isFinite(z) && Number.isFinite(d) && Math.abs(z) < d / 2;
   };
   for (const member of t.members || []) {
+    const rectangular = Number(member.MSecGeom || 1) === 2;
+    const memberPropIds = rectangular ? propRecIds : propIds;
+    const memberCoeffIds = rectangular ? coeffRecIds : coeffIds;
     if (jointIds.size && !jointIds.has(Number(member.MJointID1))) errors.push(`Member ${member.MemberID} 缺少节点 MJointID1=${member.MJointID1}`);
     if (jointIds.size && !jointIds.has(Number(member.MJointID2))) errors.push(`Member ${member.MemberID} 缺少节点 MJointID2=${member.MJointID2}`);
-    if (!propIds.has(Number(member.MPropSetID1))) errors.push(`Member ${member.MemberID} 缺少截面属性 MPropSetID1=${member.MPropSetID1}`);
-    if (!propIds.has(Number(member.MPropSetID2))) errors.push(`Member ${member.MemberID} 缺少截面属性 MPropSetID2=${member.MPropSetID2}`);
-    if (Number(member.MCoefMod || 1) === 3 && !coeffIds.has(Number(member.MemberID))) {
+    if (!memberPropIds.has(Number(member.MPropSetID1))) errors.push(`Member ${member.MemberID} 缺少截面属性 MPropSetID1=${member.MPropSetID1}`);
+    if (!memberPropIds.has(Number(member.MPropSetID2))) errors.push(`Member ${member.MemberID} 缺少截面属性 MPropSetID2=${member.MPropSetID2}`);
+    if (Number(member.MCoefMod || 1) === 3 && !memberCoeffIds.has(Number(member.MemberID))) {
       errors.push(`Member ${member.MemberID} 使用 MCoefMod=3，但缺少成员独立系数行。`);
     }
     if (v4Target && Number(member.MHstLMod || 0) === 1 && !truthy(member.PropPot)) {
@@ -1772,6 +2800,11 @@ function hydrodynRuntimeErrors(payload = currentCase().hydrodyn_tables) {
   for (const coeff of t.member_coeffs_cyl || []) {
     if (memberIds.size && !memberIds.has(Number(coeff.MemberID))) {
       errors.push(`成员系数 ${coeff.MemberID} 没有对应 Morison member。`);
+    }
+  }
+  for (const coeff of t.member_coeffs_rec || []) {
+    if (memberIds.size && !memberIds.has(Number(coeff.MemberID))) {
+      errors.push(`矩形成员系数 ${coeff.MemberID} 没有对应 Morison member。`);
     }
   }
   return errors;
@@ -1791,8 +2824,10 @@ function hydrodynReferenceWarnings(payload = hydroPayloadView()) {
   }
   const orphanJoints = (t.joints || []).map(row => Number(row.JointID)).filter(id => Number.isFinite(id) && members.length && !usedJoints.has(id));
   const orphanProps = (t.prop_sets_cyl || []).map(row => Number(row.PropSetID)).filter(id => Number.isFinite(id) && members.length && !usedProps.has(id));
+  const orphanRecProps = (t.prop_sets_rec || []).map(row => Number(row.MPropSetID)).filter(id => Number.isFinite(id) && members.length && !usedProps.has(id));
   if (orphanJoints.length) warnings.push(`未被 member 使用的节点: ${orphanJoints.join(', ')}`);
   if (orphanProps.length) warnings.push(`未被 member 使用的截面属性: ${orphanProps.join(', ')}`);
+  if (orphanRecProps.length) warnings.push(`未被 member 使用的矩形截面属性: ${orphanRecProps.join(', ')}`);
   return warnings;
 }
 
@@ -1805,6 +2840,28 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
   if (!columns.length) {
     wrap.innerHTML = '<p class="hint">模板中未找到该表。</p>';
     return;
+  }
+
+  if (!objectTable && tableName !== 'members') {
+    const actions = document.createElement('div');
+    actions.className = 'hydro-table-actions';
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mini-button';
+    add.textContent = '添加行';
+    add.onclick = () => addHydroTableRow(tableName);
+    actions.appendChild(add);
+    wrap.appendChild(actions);
+  } else if (objectTable && !Object.keys(hydroObject(tableName)).length) {
+    const actions = document.createElement('div');
+    actions.className = 'hydro-table-actions';
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mini-button';
+    add.textContent = '初始化系数';
+    add.onclick = () => initializeHydroObject(tableName);
+    actions.appendChild(add);
+    wrap.appendChild(actions);
   }
 
   const panel = document.createElement('div');
@@ -1876,9 +2933,10 @@ function renderHydroTables() {
     `格式 ${state.meta?.hydroTables?.format || 'unknown'}`,
     `运行写出 ${payload.target_format || 'auto_v4_runtime'}`,
     `joints ${(t.joints || []).length}`,
-    `props ${(t.prop_sets_cyl || []).length}`,
+    `props C${(t.prop_sets_cyl || []).length}/R${(t.prop_sets_rec || []).length}`,
     `members ${(t.members || []).length}`,
-    `member Cd ${(t.member_coeffs_cyl || []).length}`
+    `depth C${(t.depth_cyl || []).length}/R${(t.depth_rec || []).length}`,
+    `member Cd C${(t.member_coeffs_cyl || []).length}/R${(t.member_coeffs_rec || []).length}`
   ];
   const messages = [...baseWarnings, ...referenceWarnings, ...runtimeErrors];
   $('hydroStatus').innerHTML = `${custom ? '当前 case 已启用表格覆盖。' : '当前显示模板表格，编辑后才写入当前 case。'}<br>${counts.join(' | ')}${messages.length ? `<br><span class="danger-text">${messages.map(escapeHtml).join('<br>')}</span>` : ''}`;
@@ -1889,6 +2947,11 @@ function renderHydroTables() {
   renderHydroTable('hydroMemberCoeffs', 'member_coeffs_cyl');
   renderHydroTable('hydroSimple', 'simple_cyl', { objectTable: true });
   renderHydroTable('hydroAxial', 'axial');
+  renderHydroTable('hydroDepthCyl', 'depth_cyl');
+  renderHydroTable('hydroPropsRec', 'prop_sets_rec');
+  renderHydroTable('hydroSimpleRec', 'simple_rec', { objectTable: true });
+  renderHydroTable('hydroDepthRec', 'depth_rec');
+  renderHydroTable('hydroMemberCoeffsRec', 'member_coeffs_rec');
 }
 
 function renderSetRows() {
@@ -2233,6 +3296,8 @@ function cleanupScenarioForSave(data) {
   for (const c of data.cases || []) {
     if (Array.isArray(c.matrix_edits) && c.matrix_edits.length === 0) delete c.matrix_edits;
     if (Array.isArray(c.outlist_edits) && c.outlist_edits.length === 0) delete c.outlist_edits;
+    if (Array.isArray(c.input_edits) && c.input_edits.length === 0) delete c.input_edits;
+    if (Array.isArray(c.input_file_overrides) && c.input_file_overrides.length === 0) delete c.input_file_overrides;
   }
   return data;
 }
@@ -2245,6 +3310,7 @@ async function loadMeta() {
   state.meta = await api(`/api/meta${suffix}`);
   state.selectedModelId = state.meta.selectedModelId || '';
   state.selectedRuntimeId = state.meta.selectedRuntimeId || '';
+  state.externalTools = state.meta.externalTools || [];
   localStorage.setItem('openfastGui.modelId', state.selectedModelId);
   localStorage.setItem('openfastGui.runtimeId', state.selectedRuntimeId);
   const list = await api('/api/scenarios');
@@ -2260,6 +3326,7 @@ async function loadScenario(file) {
   await loadMeta();
   await loadResultsCatalog({ preserve: false, preferScenario: true });
   state.selectedCase = 0;
+  state.savedScenarioFingerprint = scenarioFingerprint();
   renderAll();
   toast(`已载入 ${file}`);
 }
@@ -2279,9 +3346,29 @@ async function saveScenario() {
     body: JSON.stringify({ file: state.scenarioFile, data: state.scenario })
   });
   state.scenarioFile = saved.file;
+  state.savedScenarioFingerprint = scenarioFingerprint();
   await loadMeta();
   renderAll();
   toast(`已保存 ${saved.file}`);
+}
+
+function scenarioConfigurationErrors() {
+  const errors = [];
+  for (const [index, caseData] of (state.scenario.cases || []).entries()) {
+    const label = caseData.name || `case ${index + 1}`;
+    for (const values of Object.values(caseData.set || {})) {
+      if (!values || typeof values !== 'object') continue;
+      if (Number(values.TMax) < 0) errors.push(`${label}: TMax 不能小于 0`);
+      if (Number(values.WindType) === 1 && Object.prototype.hasOwnProperty.call(values, 'HWindSpeed') && Number(values.HWindSpeed) <= 0) {
+        errors.push(`${label}: WindType=1 时 HWindSpeed 必须大于 0`);
+      }
+      if ([1, 2].includes(Number(values.WaveMod))) {
+        if (Object.prototype.hasOwnProperty.call(values, 'WaveHs') && Number(values.WaveHs) <= 0) errors.push(`${label}: WaveHs 必须大于 0`);
+        if (Object.prototype.hasOwnProperty.call(values, 'WaveTp') && Number(values.WaveTp) <= 0) errors.push(`${label}: WaveTp 必须大于 0`);
+      }
+    }
+  }
+  return [...new Set(errors)];
 }
 
 async function startJob(generateOnly) {
@@ -2289,6 +3376,8 @@ async function startJob(generateOnly) {
   collectForm();
   const hydroErrors = hydrodynRuntimeErrors();
   if (hydroErrors.length) throw new Error(hydroErrors.join('；'));
+  const configurationErrors = scenarioConfigurationErrors();
+  if (configurationErrors.length) throw new Error(configurationErrors.join('；'));
   await saveScenario();
   const data = await api('/api/jobs', {
     method: 'POST',
@@ -2339,7 +3428,7 @@ async function pollJob() {
 
 async function restoreLatestJob() {
   const payload = await api('/api/jobs');
-  const jobs = payload.jobs || [];
+  const jobs = (payload.jobs || []).filter(item => item.kind !== 'external-tool');
   const job = jobs.find(item => ['queued', 'running'].includes(item.status)) || jobs[0];
   if (!job) {
     renderJobState({ status: 'idle' });
@@ -2375,15 +3464,46 @@ function applyPreset() {
 function setActiveTab(name, persist = true) {
   if (!$(`tab-${name}`)) name = 'compose';
   state.activeTab = name;
-  document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
-  document.querySelectorAll('.tab-page').forEach(page => page.classList.toggle('active', page.id === `tab-${name}`));
+  document.querySelectorAll('.tab').forEach(btn => {
+    const active = btn.dataset.tab === name;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+    btn.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll('.tab-page').forEach(page => {
+    const active = page.id === `tab-${name}`;
+    page.classList.toggle('active', active);
+    page.hidden = !active;
+  });
   if (persist) localStorage.setItem('openfastGui.activeTab', name);
   if (persist) document.querySelector(`.tab[data-tab="${name}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (name === 'results' && state.resultData) requestAnimationFrame(renderResultCharts);
+  if (name === 'engineering') {
+    requestAnimationFrame(() => {
+      if (state.linearizationData) drawLinearizationChart();
+      ensureVtkViewer();
+    });
+  }
 }
 
 function bindEvents() {
-  document.querySelectorAll('.tab').forEach(btn => btn.onclick = () => setActiveTab(btn.dataset.tab));
+  const tabList = document.querySelector('.tabs');
+  if (tabList) tabList.setAttribute('role', 'tablist');
+  document.querySelectorAll('.tab').forEach(btn => {
+    const panel = $(`tab-${btn.dataset.tab}`);
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', panel?.id || '');
+    const initiallyActive = btn.classList.contains('active');
+    btn.setAttribute('aria-selected', String(initiallyActive));
+    btn.tabIndex = initiallyActive ? 0 : -1;
+    if (panel) {
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', btn.id || `tab-control-${btn.dataset.tab}`);
+      panel.hidden = !initiallyActive;
+      if (!btn.id) btn.id = `tab-control-${btn.dataset.tab}`;
+    }
+    btn.onclick = () => setActiveTab(btn.dataset.tab);
+  });
   $('modelSelect').onchange = async () => {
     collectForm();
     state.selectedModelId = $('modelSelect').value;
@@ -2393,6 +3513,8 @@ function bindEvents() {
     await loadMeta();
     state.selectedModelFile = '';
     state.selectedOutlistFile = '';
+    state.selectedModuleFile = '';
+    state.moduleDocuments.clear();
     delete currentCase().hydrodyn_tables;
     renderAll();
   };
@@ -2403,6 +3525,7 @@ function bindEvents() {
     await loadMeta();
     state.selectedModelFile = '';
     state.selectedOutlistFile = '';
+    state.selectedModuleFile = '';
     delete currentCase().hydrodyn_tables;
     renderAll();
   };
@@ -2412,7 +3535,8 @@ function bindEvents() {
   $('newScenarioBtn').onclick = () => { state.scenarioFile = 'ui_scenario.json'; state.scenario = { name: 'ui_scenario', description: 'Created from visual UI', model_id: state.selectedModelId, runtime_id: state.selectedRuntimeId, cases: [emptyCase()] }; state.selectedCase = 0; renderAll(); };
   $('addSetBtn').onclick = () => { setDeep(activeFiles().fst, 'TMax', 120); renderAll(); };
   $('addMatrixBtn').onclick = () => { delete currentCase().matrix_edits; renderAll(); toast('已清空矩阵修改'); };
-  $('addMorisonBtn').onclick = addDefaultMorisonMember;
+  $('addMorisonBtn').onclick = () => addDefaultMorisonMember(1);
+  $('addMorisonRecBtn').onclick = () => addDefaultMorisonMember(2);
   $('resetHydroTablesBtn').onclick = () => { delete currentCase().hydrodyn_tables; renderAll(); toast('已恢复模板 HydroDyn 表格'); };
   $('dlcGenerateBtn').onclick = () => { try { generateDlcCases(); } catch (err) { toast(err.message); } };
   $('focalWaveGenerateBtn').onclick = () => { try { generateFocalWaveCases(); } catch (err) { toast(err.message); } };
@@ -2438,6 +3562,12 @@ function bindEvents() {
     localStorage.setItem('openfastGui.parallelWorkers', String(state.parallelWorkers));
   };
   $('catalogSearch').oninput = renderCatalog;
+  $('moduleFileSearch').oninput = () => { state.moduleFileQuery = $('moduleFileSearch').value; renderModuleFileList(); };
+  $('moduleFieldSearch').oninput = () => { state.moduleFieldQuery = $('moduleFieldSearch').value; renderModuleEditor(); };
+  $('moduleFormMode').onclick = () => setModuleMode('form');
+  $('moduleSourceMode').onclick = () => setModuleMode('source');
+  $('moduleResetEditsBtn').onclick = resetModuleFileEdits;
+  $('moduleSaveSourceBtn').onclick = saveModuleSourceOverride;
   $('modelFileSearch').oninput = renderModelStructure;
   $('outlistFileSelect').onchange = () => { state.selectedOutlistFile = $('outlistFileSelect').value; renderOutlistEditor(); };
   $('resetOutlistFileBtn').onclick = resetCurrentOutlistFile;
@@ -2454,6 +3584,39 @@ function bindEvents() {
   $('resultExportCsvBtn').onclick = exportResultsCsv;
   $('resultExportPngBtn').onclick = exportResultsPng;
   $('resultPrintBtn').onclick = printResults;
+  $('engineeringRefreshBtn').onclick = () => loadEngineeringCatalogs().catch(error => toast(error.message));
+  $('linearizationSetupBtn').onclick = () => setActiveTab('advanced');
+  $('vtkSetupBtn').onclick = () => setActiveTab('advanced');
+  $('runLogFollow').onchange = event => {
+    state.followRunLog = Boolean(event.target.checked);
+    if (state.followRunLog && $('runLog')) $('runLog').scrollTop = $('runLog').scrollHeight;
+    renderJobState(state.currentJob || { status: 'idle' });
+  };
+  $('linearizationFileSelect').onchange = () => { state.selectedLinearizationFile = $('linearizationFileSelect').value; state.linearizationData = null; renderLinearizationWorkspace(); };
+  $('linearizationAnalyzeBtn').onclick = () => analyzeSelectedLinearization().catch(error => toast(error.message));
+  $('vtkFileSelect').onchange = () => { state.selectedVisualizationFile = $('vtkFileSelect').value; state.visualizationData = null; renderVisualizationWorkspace(); };
+  $('vtkLoadBtn').onclick = () => loadSelectedVisualization().catch(error => toast(error.message));
+  $('vtkResetCameraBtn').onclick = () => window.OpenFastVtk?.reset();
+  $('toolsRefreshBtn').onclick = () => loadExternalTools().catch(error => toast(error.message));
+  $('toolGenerateKind').onchange = () => {
+    const kind = $('toolGenerateKind').value;
+    const current = $('toolGenerateFile').value.trim();
+    if (!current || /^(wind_|farm_)/i.test(current)) {
+      $('toolGenerateFile').value = kind === 'turbsim' ? 'wind_U8_seed10101.in' : 'farm_baseline.fstf';
+    }
+    renderToolGenerator();
+  };
+  $('toolGenerateBtn').onclick = () => generateToolInput().catch(error => toast(error.message));
+  $('toolInputSaveBtn').onclick = () => saveToolInputDocument().catch(error => toast(error.message));
+  $('toolRunBtn').onclick = () => startExternalTool().catch(error => toast(error.message));
+  $('toolLaunchSelect').onchange = () => {
+    const tool = state.externalTools.find(row => row.id === $('toolLaunchSelect').value);
+    if (!$('toolInputFile').value.trim() && tool) {
+      const accepted = new Set((tool.accepts || []).map(value => value.toLowerCase()));
+      const candidate = moduleCatalog().find(row => accepted.has(row.file.slice(row.file.lastIndexOf('.')).toLowerCase()));
+      if (candidate) $('toolInputFile').value = candidate.file;
+    }
+  };
   $('jsonEditor').oninput = () => { state.jsonDirty = true; };
   ['quickTMax', 'quickWind', 'quickWaveMod', 'quickHs', 'quickTp', 'quickWavePkShp', 'quickWaveDir'].forEach(id => {
     $(id).oninput = () => {
@@ -2483,8 +3646,13 @@ async function init() {
     clearTimeout(state.resultResizeTimer);
     state.resultResizeTimer = setTimeout(() => {
       if (state.activeTab === 'results' && state.resultData) renderResultCharts();
+      if (state.activeTab === 'engineering' && state.linearizationData) drawLinearizationChart();
     }, 160);
   });
+  window.addEventListener('openfast-vtk-ready', () => {
+    if (state.activeTab === 'engineering') ensureVtkViewer();
+  });
+  await Promise.all([loadEngineeringCatalogs(), loadExternalTools()]);
   await restoreLatestJob();
 }
 

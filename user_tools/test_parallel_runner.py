@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import io
 import pathlib
 import sys
 import tempfile
@@ -23,6 +24,32 @@ def runner_args(workers: int, continue_on_fail: bool = True, resume: bool = Fals
 
 
 class ParallelRunnerTests(unittest.TestCase):
+    def test_binary_openfast_output_is_accepted(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = io.StringIO("OpenFAST completed\n")
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as folder:
+            run_dir = pathlib.Path(folder)
+            binary_output = run_dir / "model.outb"
+            binary_output.write_bytes(b"synthetic OpenFAST binary output")
+            with mock.patch.object(run_scenario.subprocess, "Popen", return_value=FakeProcess()):
+                execution = run_scenario.run_openfast(
+                    run_dir,
+                    fst_name="model.fst",
+                    timeout=1,
+                    openfast_exe=pathlib.Path("openfast.exe"),
+                )
+
+        self.assertTrue(execution["ok"])
+        self.assertEqual(pathlib.Path(execution["out"]).name, "model.outb")
+
     def test_parallel_cases_are_bounded_and_reported_in_scenario_order(self):
         cases = [{"name": f"case_{index}"} for index in range(1, 5)]
         active = 0

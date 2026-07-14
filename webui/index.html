@@ -94,6 +94,36 @@
             <input id="scenarioDescription" value="Created from visual UI">
           </label>
         </div>
+        <section id="readinessBar" class="readiness-bar" aria-live="polite">
+          <div class="readiness-summary">
+            <span class="readiness-mark" aria-hidden="true"></span>
+            <div>
+              <strong id="readinessTitle">正在检查运行环境 / Checking run environment</strong>
+              <p id="readinessDescription">模型、主输入文件和 OpenFAST runtime 正在检查。</p>
+            </div>
+          </div>
+          <div id="readinessIssues" class="readiness-issues"></div>
+          <button id="configurePathsBtn" class="mini-button" type="button">配置路径 / Configure paths</button>
+        </section>
+        <details id="profileConfigPanel" class="profile-config-panel">
+          <summary>模型与运行时路径 / Model and runtime paths</summary>
+          <p class="hint">路径在运行 GUI 服务的本机上解析。保存只写入本地覆盖配置，不会复制或修改原始 OpenFAST 模型。</p>
+          <div class="profile-config-grid">
+            <label>
+              <span>模型根目录 / Model root</span>
+              <input id="profileModelPath" spellcheck="false" placeholder="D:\OpenFAST\...\OpenFAST_input_files">
+            </label>
+            <label>
+              <span>OpenFAST 可执行文件 / Executable</span>
+              <input id="profileRuntimePath" spellcheck="false" placeholder="D:\OpenFAST\...\OpenFAST_Release.exe">
+            </label>
+            <div class="profile-config-actions">
+              <button id="validateProfilePathsBtn" class="mini-button" type="button">校验路径 / Validate</button>
+              <button id="saveProfilePathsBtn" class="button strong" type="button">保存本地路径 / Save locally</button>
+            </div>
+          </div>
+          <div id="profileConfigResult" class="profile-config-result" hidden></div>
+        </details>
       </section>
 
       <nav class="tabs" aria-label="工作区视图">
@@ -113,6 +143,20 @@
       </nav>
 
       <section id="tab-compose" class="tab-page active">
+        <section class="panel execution-plan" aria-labelledby="executionPlanTitle">
+          <div class="panel-head execution-plan-head">
+            <div>
+              <p class="section-kicker">OpenFAST execution chain / OpenFAST 执行链</p>
+              <h2 id="executionPlanTitle">运行就绪 / Run readiness</h2>
+              <p class="hint">每个 case 都从模型模板复制，在副本中写入编辑内容；原模型不会被运行过程改写。</p>
+              <p class="hint">Each case starts from a copied template. Edits are written only to that run copy, never to the source model.</p>
+            </div>
+            <span id="executionPlanStatus" class="status">checking</span>
+          </div>
+          <ol id="executionPlanSteps" class="execution-plan-steps"></ol>
+          <p id="executionPlanNote" class="hint execution-plan-note"></p>
+        </section>
+
         <div class="grid-2 compose-grid">
           <div class="compose-column">
             <section class="panel preset-panel">
@@ -134,10 +178,14 @@
             </section>
 
             <section class="panel module-panel">
-              <div class="panel-head">
-                <h2>主模块开关</h2>
-                <span class="hint">写入 FOCAL_C4.fst</span>
+              <div class="panel-head module-switch-head">
+                <div>
+                  <h2>主模块开关 <span>Primary module switches</span></h2>
+                  <p class="hint">控制 OpenFAST 耦合模块；保留“模板默认”可继承模型值。<span lang="en">Keep “Template default” to inherit the selected model.</span></p>
+                </div>
+                <span id="moduleSwitchTarget" class="hint">写入 / Written to model main file</span>
               </div>
+              <div id="moduleReadiness" class="inline-readiness" hidden></div>
               <div class="switch-grid" id="moduleSwitches"></div>
             </section>
           </div>
@@ -151,8 +199,19 @@
               </div>
               <button id="addCaseBtn" class="mini-button">添加 case</button>
             </div>
-            <div id="caseList" class="case-list"></div>
+            <div class="case-selector-copy">
+              <p>选择要编辑的工况；下方仅显示摘要，完整备注在编辑区维护。</p>
+              <span id="caseSelectionSummary" class="section-kicker"></span>
+            </div>
+            <div id="caseList" class="case-list" role="listbox" aria-label="工况选择 / Case selection"></div>
             <div class="case-editor">
+              <div class="case-editor-head">
+                <div>
+                  <p class="section-kicker">正在编辑 / Editing</p>
+                  <strong id="caseEditorTitle">当前 case</strong>
+                </div>
+                <span id="caseEditorMeta" class="badge"></span>
+              </div>
               <label><span>case 名</span><input id="caseName"></label>
               <label><span>备注</span><input id="caseNotes"></label>
               <div class="switch-row">
@@ -295,10 +354,14 @@
         <div class="grid-2 advanced-grid">
           <section class="panel">
             <div class="panel-head">
-              <h2>键值覆盖</h2>
-              <button id="addSetBtn" class="mini-button">添加</button>
+              <div>
+                <h2>键值覆盖 <span class="title-english">Parameter overrides</span></h2>
+                <p class="hint">按输入文件分组；只允许选择当前模型已发现的依赖文件。</p>
+              </div>
             </div>
-            <div id="setRows" class="rows"></div>
+            <div id="overrideReadiness" class="inline-readiness" hidden></div>
+            <div id="setRows" class="override-groups"></div>
+            <div id="setAddControl" class="override-add-control"></div>
           </section>
           <section class="panel">
             <div class="panel-head">
@@ -406,59 +469,67 @@
 
       <section id="tab-hydro" class="tab-page">
         <section class="panel">
-          <div class="panel-head">
-            <h2>HydroDyn 表格状态</h2>
-            <div class="panel-actions">
-              <button id="addMorisonBtn" class="mini-button">添加 Morison 构件</button>
-              <button id="addMorisonRecBtn" class="mini-button">添加矩形构件（v5）</button>
-              <button id="resetHydroTablesBtn" class="mini-button">恢复模板表格</button>
+          <div class="panel-head hydro-overview-head">
+            <div>
+              <p class="section-kicker">联动编辑 / Linked editing</p>
+              <h2>HydroDyn Morison 构件 / Members</h2>
+              <p class="hint hydro-overview-copy">
+                <span lang="zh-CN">新增构件会自动创建两个端点、截面属性与独立系数；删除构件会清理仅由它使用的关联数据。</span>
+                <span lang="en">Adding a member creates both endpoints, its section property and member coefficients. Deleting it removes exclusively owned references.</span>
+              </p>
+            </div>
+            <div class="panel-actions hydro-overview-actions">
+              <button id="addMorisonBtn" class="mini-button">添加圆柱构件（自动联动） / Add cylinder</button>
+              <button id="addMorisonRecBtn" class="mini-button">添加矩形构件（v5，自动联动） / Add rectangle</button>
+              <button id="resetHydroTablesBtn" class="mini-button">恢复模板表格 / Reset tables</button>
             </div>
           </div>
+          <div id="hydroReadiness" class="inline-readiness" hidden></div>
           <div id="hydroStatus" class="hint"></div>
         </section>
         <div class="hydro-grid">
           <section class="panel">
-            <div class="panel-head"><h2>Morison 构件</h2></div>
+            <div class="panel-head"><h2>Morison 构件 / Members</h2></div>
             <div id="hydroMembers"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>节点</h2></div>
+            <div class="panel-head"><h2>端点节点 / Endpoint joints</h2></div>
             <div id="hydroJoints"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>圆柱截面属性</h2></div>
+            <div class="panel-head"><h2>圆柱截面属性 / Cylindrical properties</h2></div>
             <div id="hydroProps"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>成员独立 Cd/Ca/Cp</h2></div>
+            <div class="panel-head"><h2>圆柱构件独立系数 / Cylindrical member coefficients</h2></div>
             <div id="hydroMemberCoeffs"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>Simple Cd/Ca/Cp</h2></div>
+            <div class="panel-head"><h2>圆柱通用系数 / Cylindrical simple coefficients</h2></div>
             <div id="hydroSimple"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>轴向系数</h2></div>
+            <div class="panel-head"><h2>轴向系数 / Axial coefficients</h2></div>
             <div id="hydroAxial"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>圆柱深度系数</h2></div>
+            <div class="panel-head"><h2>圆柱深度系数 / Cylindrical depth coefficients</h2></div>
             <div id="hydroDepthCyl"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>矩形截面属性（v5）</h2></div>
+            <div class="panel-head"><h2>矩形截面属性 / Rectangular properties (v5)</h2></div>
             <div id="hydroPropsRec"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>矩形 Simple 系数（v5）</h2></div>
+            <div class="panel-head"><h2>矩形通用系数 / Rectangular simple coefficients (v5)</h2></div>
             <div id="hydroSimpleRec"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>矩形深度系数（v5）</h2></div>
+            <div class="panel-head"><h2>矩形深度系数 / Rectangular depth coefficients (v5)</h2></div>
             <div id="hydroDepthRec"></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>矩形成员系数（v5）</h2></div>
+            <div class="panel-head"><h2>矩形构件独立系数 / Rectangular member coefficients (v5)</h2></div>
             <div id="hydroMemberCoeffsRec"></div>
           </section>
         </div>
@@ -630,6 +701,7 @@
           </div>
           <button id="toolsRefreshBtn" class="mini-button">重新检测</button>
         </section>
+        <section id="toolRuntimeSummary" class="tool-runtime-summary" aria-live="polite"></section>
         <section class="tool-generator">
           <div>
             <h2>生成工具输入</h2>

@@ -49,7 +49,9 @@ from model_profiles import (  # noqa: E402
     dependency_structure_for_model,
     input_files_for_model,
     model_profiles,
+    preview_profile_paths,
     runtime_profiles,
+    save_local_profile_paths,
     select_model,
     select_runtime,
 )
@@ -256,6 +258,115 @@ def active_context(qs: dict[str, list[str]] | None = None, options: dict | None 
     return model, runtime
 
 
+def readiness_issue(code: str, severity: str, scopes: list[str], **details) -> dict:
+    return {"code": code, "severity": severity, "scopes": scopes, **{key: value for key, value in details.items() if value not in {None, ""}}}
+
+
+def case_file_targets(case: dict) -> set[str]:
+    """Collect model-relative files a case attempts to edit without trusting their paths."""
+    targets = {str(name) for name in (case.get("set") or {}) if str(name).strip()}
+    if case.get("fst"):
+        targets.add(str(case["fst"]))
+    for field in ("input_edits", "input_file_overrides", "outlist_edits"):
+        rows = case.get(field) or []
+        if isinstance(rows, dict):
+            targets.update(str(name) for name in rows if str(name).strip())
+            continue
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict) and row.get("file"):
+                targets.add(str(row["file"]))
+    return targets
+
+
+def readiness_issues(
+    model: dict,
+    runtime: dict,
+    scenario: dict | None = None,
+    structure: dict | None = None,
+    require_runtime: bool = True,
+) -> list[dict]:
+    """Return stable, structured blockers/warnings for a selected GUI context."""
+    issues: list[dict] = []
+    if not model.get("exists"):
+        issues.append(readiness_issue(
+            "model_root_missing", "error", ["global", "context", "compose", "advanced", "modules", "hydro", "model"],
+            path=model.get("path"), modelId=model.get("id"),
+        ))
+    elif not model.get("fstExists"):
+        issues.append(readiness_issue(
+            "main_input_missing", "error", ["global", "context", "compose", "advanced", "modules", "hydro", "model"],
+            path=model.get("fstPath"), file=model.get("fst"), modelId=model.get("id"),
+        ))
+
+    if require_runtime and not runtime.get("exists"):
+        issues.append(readiness_issue(
+            "runtime_missing", "error", ["global", "context", "compose", "tools"],
+            path=runtime.get("path"), runtimeId=runtime.get("id"),
+        ))
+
+    structure = structure or dependency_structure_for_model(model)
+    summary = structure.get("summary") or {}
+    if model.get("exists") and model.get("fstExists") and summary.get("missing"):
+        issues.append(readiness_issue(
+            "dependency_missing", "warning", ["global", "context", "model"],
+            count=int(summary.get("missing") or 0),
+        ))
+    if model.get("hydroFile") and not model.get("hydroExists"):
+        issues.append(readiness_issue(
+            "hydrodyn_input_missing", "warning", ["global", "compose", "hydro", "model"],
+            path=model.get("hydroPath"), file=model.get("hydroFile"),
+        ))
+
+    if not isinstance(scenario, dict):
+        return issues
+
+    scenario_model = scenario.get("model_id")
+    if scenario_model and scenario_model != model.get("id"):
+        issues.append(readiness_issue(
+            "scenario_model_mismatch", "error", ["global", "context", "compose", "advanced"],
+            scenarioModelId=scenario_model, modelId=model.get("id"),
+        ))
+
+    if not (model.get("exists") and model.get("fstExists")):
+        return issues
+
+    known_files = set(input_files_for_model(model, structure=structure))
+    known_files.add(str(model.get("fst") or ""))
+    missing_targets: set[str] = set()
+    unknown_targets: set[str] = set()
+    hydro_required = False
+    for case in scenario.get("cases") or []:
+        if not isinstance(case, dict):
+            continue
+        main_values = (case.get("set") or {}).get(model.get("fst") or "", {})
+        try:
+            hydro_required = hydro_required or float((main_values or {}).get("CompHydro", 0)) > 0
+        except (TypeError, ValueError):
+            pass
+        for target in case_file_targets(case):
+            if target not in known_files:
+                unknown_targets.add(target)
+            elif not (model_path(model) / pathlib.PurePosixPath(target.replace("\\", "/"))).is_file():
+                missing_targets.add(target)
+
+    if hydro_required and not model.get("hydroExists"):
+        issues.append(readiness_issue(
+            "hydrodyn_required_missing", "error", ["global", "compose", "hydro"],
+            path=model.get("hydroPath"), file=model.get("hydroFile"),
+        ))
+    for target in sorted(unknown_targets):
+        issues.append(readiness_issue(
+            "override_target_unknown", "error", ["global", "advanced", "modules"], file=target,
+        ))
+    for target in sorted(missing_targets):
+        issues.append(readiness_issue(
+            "override_target_missing", "error", ["global", "advanced", "modules"], file=target,
+        ))
+    return issues
+
+
 def module_presets_for(model: dict) -> list[dict]:
     fst = model.get("fst") or "FOCAL_C4.fst"
     inflow = model.get("inflowFile") or "FOCAL_C4_InflowFile.dat"
@@ -335,7 +446,7 @@ def interface_modes_for(model: dict, runtime: dict) -> list[dict]:
         }
 
     return [
-        {"name": "OpenFAST 耦合 .fst", "status": "supported", "entry": f"{exe} {fst}", "scope": "按当前模型 profile 复制模板并运行"},
+        {"name": "OpenFAST 主运行 / Primary runtime", "status": "ready" if runtime.get("exists") else "configurable", "entry": f"{exe} {fst}", "scope": "在运行上下文配置 executable；按当前模型 profile 复制模板并运行"},
         {"name": "JSON 场景批量", "status": "supported", "entry": "user_tools/run_scenario.py", "scope": "复制完整模型后按参数覆盖运行一个或多个 case"},
         {"name": "线性化", "status": "supported", "entry": f"{fst} Linearize=True", "scope": "配置线性化并解析 .lin 模态、频率和阻尼"},
         {"name": "VTK 可视化", "status": "supported", "entry": f"{fst} WrVTK", "scope": "发现并在浏览器三维查看 ASCII VTK/VTP/PVD"},
@@ -420,6 +531,44 @@ def parse_hydrodyn_tables_meta(model: dict, runtime: dict) -> dict:
     return parse_hydrodyn_tables(lines, runtime_format=runtime_format)
 
 
+def meta_payload(model: dict, runtime: dict) -> dict:
+    """Build the complete GUI context from one model/runtime selection."""
+    structure = dependency_structure_for_model(model)
+    module_catalog = module_catalog_for_structure(model_path(model), structure)
+    return {
+        "root": str(ROOT),
+        "model": model["path"],
+        "modelProfile": model,
+        "modelProfiles": model_profiles(),
+        "selectedModelId": model.get("id"),
+        "openfastExe": runtime["path"],
+        "runtimeProfile": runtime,
+        "runtimeProfiles": runtime_profiles(include_version=True),
+        "selectedRuntimeId": runtime.get("id"),
+        "openfastExists": bool(runtime.get("exists")),
+        "runScenario": str(RUN_SCENARIO),
+        "modelStructure": structure,
+        "dependencySummary": structure.get("summary") or {},
+        "readiness": readiness_issues(model, runtime, structure=structure),
+        "modulePlugins": plugin_definitions(),
+        "moduleCatalog": module_catalog,
+        "capabilityMatrix": capability_matrix(module_catalog),
+        "templateKeys": parse_template_keys(model, structure=structure),
+        "outLists": parse_model_outlists(model, structure=structure),
+        "hydroMatrices": parse_hydrodyn_matrices(model),
+        "hydroTables": parse_hydrodyn_tables_meta(model, runtime),
+        "modulePresets": module_presets_for(model),
+        "interfaceModes": interface_modes_for(model, runtime),
+        "externalTools": tool_profiles(),
+        "docLinks": DOC_LINKS,
+    }
+
+
+def readiness_text(issue: dict) -> str:
+    detail = issue.get("path") or issue.get("file") or issue.get("scenarioModelId") or ""
+    return f"{issue.get('code', 'readiness_error')}{f': {detail}' if detail else ''}"
+
+
 def scenario_list() -> list[dict]:
     SCENARIOS.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -434,6 +583,27 @@ def scenario_list() -> list[dict]:
 
 def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
     model, runtime = active_context(options=options)
+    scenario = read_json(scenario_file)
+    structure = dependency_structure_for_model(model)
+    readiness = readiness_issues(
+        model,
+        runtime,
+        scenario=scenario,
+        structure=structure,
+        require_runtime=not bool(options.get("generateOnly")),
+    )
+    blockers = [issue for issue in readiness if issue.get("severity") == "error"]
+    if blockers:
+        with JOBS_LOCK:
+            JOBS[job_id].update(
+                {
+                    "status": "failed",
+                    "finishedAt": time.time(),
+                    "output": "运行前检查未通过 / Readiness check failed\n" + "\n".join(readiness_text(issue) for issue in blockers),
+                    "readiness": readiness,
+                }
+            )
+        return
     workers = max(1, min(int(options.get("workers") or 1), 8))
     command = [
         PYTHON,
@@ -619,8 +789,11 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def send_error_json(self, message, status=400):
-        self.send_json({"ok": False, "error": str(message)}, status=status)
+    def send_error_json(self, message, status=400, issues: list[dict] | None = None):
+        payload = {"ok": False, "error": str(message)}
+        if issues:
+            payload["issues"] = issues
+        self.send_json(payload, status=status)
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -629,35 +802,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/meta":
                 model, runtime = active_context(qs=qs)
-                structure = dependency_structure_for_model(model)
-                module_catalog = module_catalog_for_structure(model_path(model), structure)
-                return self.send_json(
-                    {
-                        "root": str(ROOT),
-                        "model": model["path"],
-                        "modelProfile": model,
-                        "modelProfiles": model_profiles(),
-                        "selectedModelId": model.get("id"),
-                        "openfastExe": runtime["path"],
-                        "runtimeProfile": runtime,
-                        "runtimeProfiles": runtime_profiles(include_version=True),
-                        "selectedRuntimeId": runtime.get("id"),
-                        "openfastExists": bool(runtime.get("exists")),
-                        "runScenario": str(RUN_SCENARIO),
-                        "modelStructure": structure,
-                        "modulePlugins": plugin_definitions(),
-                        "moduleCatalog": module_catalog,
-                        "capabilityMatrix": capability_matrix(module_catalog),
-                        "templateKeys": parse_template_keys(model, structure=structure),
-                        "outLists": parse_model_outlists(model, structure=structure),
-                        "hydroMatrices": parse_hydrodyn_matrices(model),
-                        "hydroTables": parse_hydrodyn_tables_meta(model, runtime),
-                        "modulePresets": module_presets_for(model),
-                        "interfaceModes": interface_modes_for(model, runtime),
-                        "externalTools": tool_profiles(),
-                        "docLinks": DOC_LINKS,
-                    }
-                )
+                return self.send_json(meta_payload(model, runtime))
             if path == "/api/module":
                 model, _runtime = active_context(qs=qs)
                 file_id = qs.get("file", [""])[0]
@@ -710,6 +855,44 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             body = self.read_body()
+            if parsed.path == "/api/profiles/validate":
+                model, runtime = preview_profile_paths(
+                    str(body.get("modelId") or ""),
+                    body.get("modelPath"),
+                    str(body.get("runtimeId") or ""),
+                    body.get("runtimePath"),
+                )
+                structure = dependency_structure_for_model(model)
+                return self.send_json(
+                    {
+                        "ok": True,
+                        "modelProfile": model,
+                        "runtimeProfile": runtime,
+                        "dependencySummary": structure.get("summary") or {},
+                        "readiness": readiness_issues(model, runtime, structure=structure),
+                    }
+                )
+            if parsed.path == "/api/profiles/local":
+                model_id = str(body.get("modelId") or "")
+                runtime_id = str(body.get("runtimeId") or "")
+                save_local_profile_paths(model_id, body.get("modelPath"), runtime_id, body.get("runtimePath"))
+                model, runtime = active_context(options={"modelId": model_id, "runtimeId": runtime_id})
+                return self.send_json(meta_payload(model, runtime))
+            if parsed.path == "/api/readiness":
+                scenario = body.get("scenario")
+                if not isinstance(scenario, dict):
+                    raise ValueError("Missing scenario for readiness check")
+                options = body.get("options") or {}
+                model, runtime = active_context(options=options)
+                structure = dependency_structure_for_model(model)
+                readiness = readiness_issues(
+                    model,
+                    runtime,
+                    scenario=scenario,
+                    structure=structure,
+                    require_runtime=not bool(options.get("generateOnly")),
+                )
+                return self.send_json({"ok": True, "readiness": readiness, "dependencySummary": structure.get("summary") or {}})
             if parsed.path == "/api/scenario":
                 filename = body.get("file") or f"{body.get('data', {}).get('name', 'ui_scenario')}.json"
                 filename = pathlib.Path(str(filename)).name
@@ -728,6 +911,19 @@ class Handler(BaseHTTPRequestHandler):
                 cases = data.get("cases")
                 if not isinstance(cases, list) or not cases:
                     raise ValueError("Scenario has no cases. Add at least one case before running.")
+                options = body.get("options") or {}
+                model, runtime = active_context(options=options)
+                structure = dependency_structure_for_model(model)
+                readiness = readiness_issues(
+                    model,
+                    runtime,
+                    scenario=data,
+                    structure=structure,
+                    require_runtime=not bool(options.get("generateOnly")),
+                )
+                blockers = [issue for issue in readiness if issue.get("severity") == "error"]
+                if blockers:
+                    return self.send_error_json("运行前检查未通过 / Readiness check failed", status=422, issues=blockers)
                 filename = body.get("file") or f"_ui_{int(time.time())}.json"
                 filename = pathlib.Path(str(filename)).name
                 if not filename.endswith(".json"):
@@ -744,7 +940,7 @@ class Handler(BaseHTTPRequestHandler):
                         "output": "",
                         "createdAt": time.time(),
                     }
-                thread = threading.Thread(target=run_job, args=(job_id, path_obj, body.get("options") or {}), daemon=True)
+                thread = threading.Thread(target=run_job, args=(job_id, path_obj, options), daemon=True)
                 thread.start()
                 return self.send_json({"ok": True, "jobId": job_id})
             if parsed.path == "/api/results/analyze":

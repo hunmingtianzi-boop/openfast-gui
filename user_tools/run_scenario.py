@@ -539,10 +539,14 @@ def run_openfast(
     stdout = "".join(output_parts)
     log_path = run_dir / "openfast_console.log"
     log_path.write_text(stdout + "\n\nSTDERR:\n", encoding="utf-8")
-    out_path = run_dir / f"{pathlib.Path(fst_name).stem}.out"
+    out_candidates = [
+        run_dir / f"{pathlib.Path(fst_name).stem}.out",
+        run_dir / f"{pathlib.Path(fst_name).stem}.outb",
+    ]
+    out_path = next((path for path in out_candidates if path.is_file()), out_candidates[0])
     return {
         "returncode": returncode,
-        "ok": returncode == 0 and out_path.is_file(),
+        "ok": returncode == 0 and any(path.is_file() for path in out_candidates),
         "walltime_s": walltime,
         "stdout_tail": "".join(tail)[-2000:],
         "stderr_tail": "",

@@ -45,7 +45,9 @@ const state = {
   toolInputDocument: null,
   externalToolJob: null,
   externalToolPollTimer: null,
-  jsonDirty: false
+  jsonDirty: false,
+  actionReadiness: [],
+  profileValidation: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -55,6 +57,17 @@ const MATRIX_BLOCKS = [
   ['BLin', 'AddBLin 线性阻尼'],
   ['BQuad', 'AddBQuad 二次阻尼/拖曳']
 ];
+const READINESS_COPY = {
+  model_root_missing: ['模型根目录不可用', 'Model root is unavailable'],
+  main_input_missing: ['主 .fst 输入文件缺失', 'Main .fst input is missing'],
+  runtime_missing: ['OpenFAST 可执行文件不可用', 'OpenFAST executable is unavailable'],
+  dependency_missing: ['模型依赖仍有缺失项', 'Some model dependencies are missing'],
+  hydrodyn_input_missing: ['HydroDyn 输入文件未找到', 'HydroDyn input is missing'],
+  hydrodyn_required_missing: ['HydroDyn 已启用，但输入文件未找到', 'HydroDyn is enabled but its input is missing'],
+  scenario_model_mismatch: ['场景与当前模型不一致', 'Scenario and selected model do not match'],
+  override_target_unknown: ['覆盖目标不属于当前模型', 'Override target is not part of the selected model'],
+  override_target_missing: ['覆盖目标文件不存在', 'Override target file is missing']
+};
 const DLC11_ROWS = [
   { wind: 4, hs: 1.10, tp: 8.52, gamma: 1.00 },
   { wind: 6, hs: 1.18, tp: 8.31, gamma: 1.00 },
@@ -119,17 +132,28 @@ const HYDRO_VISIBLE_COLUMNS = {
   member_coeffs_cyl: ['MemberID', 'MemberCd1', 'MemberCd2', 'MemberCdMG1', 'MemberCdMG2', 'MemberCa1', 'MemberCa2', 'MemberCaMG1', 'MemberCaMG2', 'MemberCp1', 'MemberCp2', 'MemberCpMG1', 'MemberCpMG2', 'MemberAxCd1', 'MemberAxCd2', 'MemberAxCdMG1', 'MemberAxCdMG2', 'MemberAxCa1', 'MemberAxCa2', 'MemberAxCaMG1', 'MemberAxCaMG2', 'MemberAxCp1', 'MemberAxCp2', 'MemberAxCpMG1', 'MemberAxCpMG2', 'MemberCb1', 'MemberCb2', 'MemberCbMG1', 'MemberCbMG2']
 };
 const HYDRO_TABLE_TITLES = {
-  axial: '轴向系数',
-  joints: '节点',
-  prop_sets_cyl: '圆柱截面属性',
-  prop_sets_rec: '矩形截面属性',
-  members: 'Morison 构件',
-  simple_cyl: 'Simple Cd/Ca/Cp',
-  simple_rec: '矩形 Simple Cd/Ca/Cp',
-  depth_cyl: '圆柱深度系数',
-  depth_rec: '矩形深度系数',
-  member_coeffs_cyl: '成员独立 Cd/Ca/Cp',
-  member_coeffs_rec: '矩形成员独立 Cd/Ca/Cp'
+  axial: '轴向系数 / Axial coefficients',
+  joints: '节点 / Joints',
+  prop_sets_cyl: '圆柱截面属性 / Cylindrical properties',
+  prop_sets_rec: '矩形截面属性 / Rectangular properties',
+  members: 'Morison 构件 / Members',
+  simple_cyl: '圆柱通用系数 / Cylindrical simple coefficients',
+  simple_rec: '矩形通用系数 / Rectangular simple coefficients',
+  depth_cyl: '圆柱深度系数 / Cylindrical depth coefficients',
+  depth_rec: '矩形深度系数 / Rectangular depth coefficients',
+  member_coeffs_cyl: '圆柱构件独立系数 / Cylindrical member coefficients',
+  member_coeffs_rec: '矩形构件独立系数 / Rectangular member coefficients'
+};
+const HYDRO_FIELD_LABELS = {
+  MemberID: '构件号 / Member ID', MJointID1: '起点 / Start joint', MJointID2: '终点 / End joint',
+  MPropSetID1: '起点截面 / Start property', MPropSetID2: '终点截面 / End property',
+  MSecGeom: '截面形状 / Geometry', MSpinOrient: '旋转角 / Spin', MDivSize: '分段长度 / Division',
+  MCoefMod: '系数模式 / Coef. mode', MHstLMod: '海生物模式 / Marine growth', PropPot: '势流构件 / Potential flow',
+  JointID: '节点号 / Joint ID', Jointxi: 'X 坐标 / X', Jointyi: 'Y 坐标 / Y', Jointzi: 'Z 坐标 / Z',
+  JointAxID: '轴向系数号 / Axial ID', JointOvrlp: '重叠 / Overlap',
+  PropSetID: '截面号 / Property ID', MPropSetID: '截面号 / Property ID', PropD: '直径 / Diameter',
+  PropA: '边长 A / Side A', PropB: '边长 B / Side B', PropThck: '壁厚 / Thickness',
+  AxCoefID: '轴向系数号 / Axial ID'
 };
 
 function activeFiles() {
@@ -141,6 +165,118 @@ function activeFiles() {
     seaStateCompKey: profile.seaStateCompKey || 'CompSeaState',
     defaultMooring: Number(profile.defaultMooring ?? 3)
   };
+}
+
+function readinessIssueKey(issue) {
+  return [issue.code, issue.file, issue.path, issue.scenarioModelId, issue.modelId].filter(Boolean).join('|');
+}
+
+function issueCopy(issue) {
+  const copy = READINESS_COPY[issue.code] || ['运行环境需要检查', 'Run environment needs review'];
+  const technical = issue.path || issue.file || (issue.scenarioModelId ? `${issue.scenarioModelId} → ${issue.modelId || state.selectedModelId}` : '');
+  return { zh: copy[0], en: copy[1], technical };
+}
+
+function scenarioReadinessIssues() {
+  const issues = [];
+  const model = state.meta?.modelProfile || {};
+  const files = activeFiles();
+  if (state.scenario?.model_id && state.selectedModelId && state.scenario.model_id !== state.selectedModelId) {
+    issues.push({
+      code: 'scenario_model_mismatch', severity: 'error', scopes: ['global', 'context', 'compose', 'advanced'],
+      scenarioModelId: state.scenario.model_id, modelId: state.selectedModelId
+    });
+  }
+  if (!(model.exists && model.fstExists)) return issues;
+
+  const knownFiles = new Set(Object.keys(state.meta?.templateKeys || {}));
+  knownFiles.add(files.fst);
+  const addTargetIssue = (file) => {
+    if (!file || knownFiles.has(file)) return;
+    issues.push({ code: 'override_target_unknown', severity: 'error', scopes: ['global', 'advanced', 'modules'], file });
+  };
+  for (const caseData of state.scenario?.cases || []) {
+    for (const file of Object.keys(caseData.set || {})) addTargetIssue(file);
+    for (const field of ['input_edits', 'input_file_overrides', 'outlist_edits']) {
+      const rows = caseData[field] || [];
+      if (Array.isArray(rows)) rows.forEach(row => addTargetIssue(row?.file));
+      else if (rows && typeof rows === 'object') Object.keys(rows).forEach(addTargetIssue);
+    }
+    const hydroValue = caseData.set?.[files.fst]?.CompHydro;
+    if (Number(hydroValue) > 0 && !model.hydroExists) {
+      issues.push({ code: 'hydrodyn_required_missing', severity: 'error', scopes: ['global', 'compose', 'hydro'], path: model.hydroPath, file: model.hydroFile });
+    }
+  }
+  return issues;
+}
+
+function readinessIssues() {
+  const rows = [...(state.meta?.readiness || []), ...scenarioReadinessIssues(), ...(state.actionReadiness || [])];
+  const seen = new Set();
+  return rows.filter(issue => {
+    const key = readinessIssueKey(issue);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isReadinessBlocked(issue) {
+  return issue.severity === 'error';
+}
+
+function openProfileConfiguration() {
+  const panel = $('profileConfigPanel');
+  if (!panel) return;
+  panel.open = true;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  setTimeout(() => $('profileModelPath')?.focus(), 180);
+}
+
+function renderInlineReadiness(id, scopes) {
+  const el = $(id);
+  if (!el) return;
+  const scoped = readinessIssues().filter(issue => (issue.scopes || []).some(scope => scopes.includes(scope)));
+  el.hidden = !scoped.length;
+  if (!scoped.length) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = scoped.map(issue => {
+    const copy = issueCopy(issue);
+    return `<div class="inline-readiness-item ${escapeHtml(issue.severity || 'warning')}"><strong>${escapeHtml(copy.zh)}</strong><span>${escapeHtml(copy.en)}${copy.technical ? ` · <code>${escapeHtml(copy.technical)}</code>` : ''}</span></div>`;
+  }).join('');
+}
+
+function renderReadiness() {
+  const bar = $('readinessBar');
+  if (!bar) return;
+  const issues = readinessIssues();
+  const blockers = issues.filter(isReadinessBlocked);
+  const warnings = issues.filter(issue => issue.severity === 'warning');
+  const first = blockers[0] || warnings[0];
+  const model = state.meta?.modelProfile || {};
+  const runtime = state.meta?.runtimeProfile || {};
+  const status = blockers.length ? 'blocked' : warnings.length ? 'review' : 'ready';
+  bar.dataset.status = status;
+  $('readinessTitle').textContent = blockers.length
+    ? `${blockers.length} 项运行阻断 / ${blockers.length} run blocker${blockers.length > 1 ? 's' : ''}`
+    : warnings.length
+      ? `${warnings.length} 项需要复核 / ${warnings.length} item${warnings.length > 1 ? 's' : ''} to review`
+      : '运行环境已就绪 / Run environment ready';
+  $('readinessDescription').textContent = first
+    ? `${issueCopy(first).zh}。${issueCopy(first).en}${issueCopy(first).technical ? ` ${issueCopy(first).technical}` : ''}`
+    : `${model.name || model.id || 'Model'} · ${model.fst || ''} · ${runtime.name || runtime.id || 'OpenFAST'}`;
+  const issueWrap = $('readinessIssues');
+  issueWrap.innerHTML = issues.slice(0, 3).map(issue => {
+    const copy = issueCopy(issue);
+    return `<span class="readiness-issue ${escapeHtml(issue.severity || 'warning')}">${escapeHtml(copy.zh)}${copy.technical ? `: ${escapeHtml(copy.technical)}` : ''}</span>`;
+  }).join('');
+  renderInlineReadiness('moduleReadiness', ['compose']);
+  renderInlineReadiness('overrideReadiness', ['advanced']);
+  renderInlineReadiness('hydroReadiness', ['hydro']);
+  renderProfileConfigResult();
+  setJobButtons(!state.jobRunning);
 }
 
 function targetFormatForRuntime() {
@@ -161,7 +297,11 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
   });
   const data = await response.json();
-  if (!response.ok || data.ok === false) throw new Error(data.error || response.statusText);
+  if (!response.ok || data.ok === false) {
+    const error = new Error(data.error || response.statusText);
+    error.issues = data.issues || [];
+    throw error;
+  }
   return data;
 }
 
@@ -1070,7 +1210,18 @@ async function generateToolInput() {
 function renderToolProfiles() {
   const wrap = $('toolProfileList');
   wrap.innerHTML = '';
-  for (const tool of state.externalTools) {
+  const tools = state.externalTools.filter(tool => tool.id !== 'openfast');
+  const sections = [
+    ['独立工具 / Standalone tools', tools.filter(tool => tool.kind === 'process')],
+    ['库接口 / Library interfaces', tools.filter(tool => tool.kind !== 'process')]
+  ];
+  for (const [title, sectionTools] of sections) {
+    if (!sectionTools.length) continue;
+    const heading = document.createElement('h2');
+    heading.className = 'tool-profile-heading';
+    heading.textContent = title;
+    wrap.appendChild(heading);
+    for (const tool of sectionTools) {
     const row = document.createElement('section');
     row.className = `tool-profile-row ${tool.exists ? 'ready' : 'missing'}`;
     const identity = document.createElement('div');
@@ -1095,6 +1246,7 @@ function renderToolProfiles() {
     controls.append(input, save);
     row.append(identity, description, controls);
     wrap.appendChild(row);
+    }
   }
 }
 
@@ -1102,7 +1254,7 @@ function renderToolLauncher() {
   const select = $('toolLaunchSelect');
   const previous = select.value;
   select.innerHTML = '';
-  for (const tool of state.externalTools.filter(row => row.kind === 'process')) {
+  for (const tool of state.externalTools.filter(row => row.kind === 'process' && row.id !== 'openfast')) {
     const option = document.createElement('option');
     option.value = tool.id;
     option.textContent = `${tool.name} · ${tool.runnable ? 'ready' : 'not installed'}`;
@@ -1114,9 +1266,21 @@ function renderToolLauncher() {
   $('toolRunBtn').disabled = !select.value;
 }
 
+function renderToolRuntimeSummary() {
+  const wrap = $('toolRuntimeSummary');
+  if (!wrap) return;
+  const runtime = state.meta?.runtimeProfile || {};
+  const issues = readinessIssues().filter(issue => (issue.scopes || []).includes('tools'));
+  const blocked = issues.some(isReadinessBlocked);
+  wrap.dataset.status = blocked ? 'blocked' : runtime.exists ? 'ready' : 'review';
+  wrap.innerHTML = `<div><span class="section-kicker">主运行时 / Primary runtime</span><strong>${escapeHtml(runtime.name || runtime.id || 'OpenFAST')}</strong><p>${escapeHtml(runtime.path || '尚未配置 / Not configured')}</p></div><div class="tool-runtime-status"><span>${blocked ? '不可运行 / Blocked' : runtime.exists ? '已就绪 / Ready' : '需要配置 / Configure'}</span><button class="mini-button" type="button">配置路径 / Configure paths</button></div>`;
+  wrap.querySelector('button').onclick = openProfileConfiguration;
+}
+
 function renderToolWorkspace() {
   if (!$('toolProfileList')) return;
   renderToolGenerator();
+  renderToolRuntimeSummary();
   renderToolProfiles();
   renderToolLauncher();
 }
@@ -1156,6 +1320,7 @@ function renderAll() {
   normalizeScenario();
   $('workspacePath').textContent = state.meta?.root || '';
   renderProfileControls();
+  renderReadiness();
   $('scenarioFile').value = state.scenarioFile;
   $('scenarioName').value = state.scenario.name || '';
   $('scenarioDescription').value = state.scenario.description || '';
@@ -1170,6 +1335,7 @@ function renderAll() {
   renderDlcLearning();
   renderFocalWaveReproduction();
   renderModuleSwitches();
+  renderExecutionPlan();
   renderAdvancedRows();
   renderModuleWorkspace();
   renderModelStructure();
@@ -1181,7 +1347,82 @@ function renderAll() {
   renderToolWorkspace();
   renderJson();
   renderSaveState();
+  setJobButtons(!state.jobRunning);
   setActiveTab(state.activeTab, false);
+}
+
+function executionPlanSlug(value, fallback) {
+  const text = String(value || fallback || '').trim();
+  return text.replace(/[^0-9A-Za-z_.-]+/g, '_').replace(/^_+|_+$/g, '') || 'case';
+}
+
+function renderExecutionPlan() {
+  const stepsEl = $('executionPlanSteps');
+  const statusEl = $('executionPlanStatus');
+  const noteEl = $('executionPlanNote');
+  if (!stepsEl || !statusEl || !noteEl) return;
+
+  const model = state.meta?.modelProfile || {};
+  const runtime = state.meta?.runtimeProfile || {};
+  const structure = state.meta?.modelStructure || {};
+  const summary = structure.summary || {};
+  const files = activeFiles();
+  const caseData = currentCase();
+  const caseName = executionPlanSlug(caseData.name, `case_${state.selectedCase + 1}`);
+  const scenarioName = executionPlanSlug(state.scenario?.name, 'ui_scenario');
+  const missing = Number(summary.missing || 0);
+  const readiness = readinessIssues();
+  const blockers = readiness.filter(isReadinessBlocked);
+  const editCount = (caseData.input_edits || []).length
+    + (caseData.input_file_overrides || []).length
+    + Object.values(caseData.set || {}).reduce((count, values) => count + Object.keys(values || {}).length, 0)
+    + (caseData.outlist_edits || []).length
+    + (caseData.matrix_edits || []).length;
+  const modelReady = Boolean(model.exists && model.fstExists);
+  const runtimeReady = Boolean(runtime.exists);
+  const stateName = blockers.length ? 'blocked' : missing || readiness.length ? 'review' : 'ready';
+  const steps = [
+    {
+      title: '选择模型 / Select model',
+      detail: modelReady ? `${model.name || model.id || 'Model'} · ${files.fst}` : '主输入文件或模型目录不可用 / Model or main input is unavailable',
+      state: modelReady ? 'ready' : 'blocked'
+    },
+    {
+      title: '生成 case 副本 / Create case copy',
+      detail: `runs/${scenarioName}/${caseName}`,
+      state: modelReady ? 'ready' : 'blocked'
+    },
+    {
+      title: '写入场景编辑 / Apply edits',
+      detail: editCount ? `${editCount} 项编辑 / ${editCount} edits` : '模板默认 / Template defaults',
+      state: 'ready'
+    },
+    {
+      title: '预检依赖 / Preflight dependencies',
+      detail: blockers.length ? `${blockers.length} 项阻断需修复 / ${blockers.length} blockers need repair` : missing ? `${missing} 个引用待复核 / ${missing} references need review` : `${summary.existing || 0} 个引用文件已发现 / referenced files found`,
+      state: blockers.length ? 'blocked' : missing || readiness.length ? 'review' : 'ready'
+    },
+    {
+      title: '运行与采集 / Run and collect',
+      detail: runtimeReady ? `${runtime.name || runtime.id || 'OpenFAST'} → .out/.outb, .lin, VTK` : 'OpenFAST executable 不可用 / Executable unavailable',
+      state: runtimeReady ? 'ready' : 'blocked'
+    }
+  ];
+
+  statusEl.textContent = stateName === 'ready' ? 'ready / 就绪' : stateName === 'review' ? 'review / 复核' : 'blocked / 已阻止';
+  statusEl.className = `status execution-status ${stateName}`;
+  stepsEl.innerHTML = steps.map((step, index) => `
+    <li class="execution-step ${step.state}">
+      <span class="execution-step-index">${String(index + 1).padStart(2, '0')}</span>
+      <strong>${escapeHtml(step.title)}</strong>
+      <span>${escapeHtml(step.detail)}</span>
+    </li>
+  `).join('');
+  noteEl.textContent = stateName === 'blocked'
+    ? '先在运行上下文中修复路径或场景一致性，再启动任务 / Repair the paths or scenario context before starting.'
+    : missing
+      ? '依赖扫描发现缺失引用；运行器会在复制 case 后继续检查风场等运行时资源 / Review missing references before launch.'
+      : '启动后，控制台日志和 case summary 会写入独立运行目录；结果页可读取时程、线性化与 VTK 产物。';
 }
 
 function scenarioFingerprint() {
@@ -1870,6 +2111,68 @@ function updatePlotComparisonPreference() {
   localStorage.setItem('openfastGui.plotComparison', state.plotComparison);
 }
 
+function renderProfileConfigResult() {
+  const result = $('profileConfigResult');
+  if (!result) return;
+  const preview = state.profileValidation;
+  result.hidden = !preview;
+  if (!preview) {
+    result.innerHTML = '';
+    return;
+  }
+  if (preview.error) {
+    result.innerHTML = `<strong>路径未通过校验 / Path validation failed</strong><span>${escapeHtml(preview.error)}</span>`;
+    return;
+  }
+  const issues = preview.readiness || [];
+  const blockers = issues.filter(isReadinessBlocked);
+  const model = preview.modelProfile || {};
+  const runtime = preview.runtimeProfile || {};
+  result.dataset.status = blockers.length ? 'blocked' : issues.length ? 'review' : 'ready';
+  result.innerHTML = `<strong>${blockers.length ? '路径不可运行 / Paths are not runnable' : issues.length ? '路径可用，但仍需复核 / Paths need review' : '路径有效 / Paths are valid'}</strong><span>${escapeHtml(model.path || '')}</span><span>${escapeHtml(runtime.path || '')}</span>${issues.map(issue => `<span>${escapeHtml(issueCopy(issue).zh)}${issue.path || issue.file ? ` · ${escapeHtml(issue.path || issue.file)}` : ''}</span>`).join('')}`;
+}
+
+function profilePathPayload() {
+  return {
+    modelId: state.selectedModelId,
+    modelPath: $('profileModelPath')?.value.trim() || '',
+    runtimeId: state.selectedRuntimeId,
+    runtimePath: $('profileRuntimePath')?.value.trim() || ''
+  };
+}
+
+async function validateProfilePaths() {
+  try {
+    state.profileValidation = await api('/api/profiles/validate', {
+      method: 'POST', body: JSON.stringify(profilePathPayload())
+    });
+  } catch (error) {
+    state.profileValidation = { error: error.message, readiness: error.issues || [] };
+  }
+  renderProfileConfigResult();
+}
+
+async function saveProfilePaths() {
+  const payload = profilePathPayload();
+  try {
+    const meta = await api('/api/profiles/local', { method: 'POST', body: JSON.stringify(payload) });
+    state.meta = meta;
+    state.selectedModelId = meta.selectedModelId || payload.modelId;
+    state.selectedRuntimeId = meta.selectedRuntimeId || payload.runtimeId;
+    state.externalTools = meta.externalTools || state.externalTools;
+    state.actionReadiness = [];
+    state.profileValidation = null;
+    localStorage.setItem('openfastGui.modelId', state.selectedModelId);
+    localStorage.setItem('openfastGui.runtimeId', state.selectedRuntimeId);
+    renderAll();
+    toast('本地模型与运行时路径已保存 / Local paths saved');
+  } catch (error) {
+    state.profileValidation = { error: error.message, readiness: error.issues || [] };
+    renderProfileConfigResult();
+    throw error;
+  }
+}
+
 function renderProfileControls() {
   const modelSelect = $('modelSelect');
   const runtimeSelect = $('runtimeSelect');
@@ -1898,10 +2201,19 @@ function renderProfileControls() {
   const model = state.meta.modelProfile || {};
   const runtime = state.meta.runtimeProfile || {};
   $('profileStatus').textContent = [
-    `model: ${model.fst || ''}`,
-    `runtime: ${runtime.version || runtime.runtimeFormat || ''}`,
-    `hydro: ${model.hydroFile || ''}`
+    `模型 / Model: ${model.fst || ''}`,
+    `运行时 / Runtime: ${runtime.version || runtime.runtimeFormat || ''}`,
+    `HydroDyn: ${model.hydroFile || ''}`
   ].join('\n');
+
+  const panel = $('profileConfigPanel');
+  const contextKey = `${model.id || ''}|${runtime.id || ''}`;
+  if (panel && panel.dataset.contextKey !== contextKey) {
+    panel.dataset.contextKey = contextKey;
+    $('profileModelPath').value = model.path || '';
+    $('profileRuntimePath').value = runtime.path || '';
+    state.profileValidation = null;
+  }
 }
 
 function renderPresets() {
@@ -2310,15 +2622,27 @@ function renderCases() {
   const wrap = $('caseList');
   wrap.innerHTML = '';
   state.scenario.cases.forEach((c, index) => {
-    const div = document.createElement('div');
-    div.className = `case-item ${index === state.selectedCase ? 'active' : ''}`;
+    const div = document.createElement('button');
+    const selected = index === state.selectedCase;
+    div.type = 'button';
+    div.className = `case-item ${selected ? 'active' : ''}`;
+    div.setAttribute('role', 'option');
+    div.setAttribute('aria-selected', String(selected));
     const setCount = Object.values(c.set || {}).reduce((n, values) => n + Object.keys(values).length, 0);
-    div.innerHTML = `<div class="item-title"><span>${escapeHtml(c.name || `case_${index + 1}`)}</span><span class="badge">${setCount} keys</span></div><div class="item-meta">${escapeHtml(c.notes || '')}</div>`;
+    const name = c.name || `case_${index + 1}`;
+    const note = c.notes || '无备注 / No note';
+    div.setAttribute('aria-label', `工况 ${index + 1} / Case ${index + 1}: ${name}`);
+    div.innerHTML = `<span class="case-item-top"><span class="case-ordinal">工况 ${index + 1} / Case ${index + 1}</span><span class="badge">${setCount} keys</span></span><strong class="case-item-name">${escapeHtml(name)}</strong><span class="case-item-note">${escapeHtml(note)}</span>`;
     div.onclick = () => { collectForm(); state.selectedCase = index; renderAll(); };
     wrap.appendChild(div);
   });
   const c = currentCase();
+  const selectedSetCount = Object.values(c.set || {}).reduce((n, values) => n + Object.keys(values).length, 0);
+  if ($('caseSelectionSummary')) $('caseSelectionSummary').textContent = `${state.scenario.cases.length} 个工况 / ${state.scenario.cases.length} cases`;
+  if ($('caseEditorTitle')) $('caseEditorTitle').textContent = c.name || `case_${state.selectedCase + 1}`;
+  if ($('caseEditorMeta')) $('caseEditorMeta').textContent = `${selectedSetCount} keys`;
   if ($('caseCount')) $('caseCount').textContent = `${state.selectedCase + 1} / ${state.scenario.cases.length} · ${state.scenario.cases.length} cases`;
+  if ($('caseCount')) $('caseCount').textContent = `\u6b63\u5728\u7f16\u8f91 ${state.selectedCase + 1} / ${state.scenario.cases.length} · Editing case`;
   $('caseName').value = c.name || '';
   $('caseNotes').value = c.notes || '';
 }
@@ -2326,41 +2650,59 @@ function renderCases() {
 function renderModuleSwitches() {
   const wrap = $('moduleSwitches');
   const files = activeFiles();
+  const target = $('moduleSwitchTarget');
+  const model = state.meta?.modelProfile || {};
+  const targetReady = Boolean(model.exists && model.fstExists);
+  if (target) target.textContent = targetReady
+    ? `主输入 / Main input: ${files.fst}`
+    : `主输入不可用 / Main input unavailable: ${files.fst}`;
   const keys = [
-    ['CompElast', 'Structure', [1, 2, 3]],
-    ['CompInflow', 'InflowWind', [0, 1, 2]],
-    ['CompAero', 'Aero', [0, 1, 2, 3]],
-    ['CompServo', 'Servo', [0, 1]],
-    [files.seaStateCompKey, 'SeaState', [0, 1]],
-    ['CompHydro', 'Hydro', [0, 1]],
-    ['CompSub', 'SubDyn', [0, 1]],
-    ['CompMooring', 'Mooring', [0, 1, 2, 3, 4]],
-    ['CompIce', 'Ice', [0, 1, 2]],
-    ['MHK', 'MHK', [0, 1, 2]]
+    ['CompElast', '结构动力学', 'Structural dynamics', [1, 2, 3]],
+    ['CompInflow', '入流风', 'Inflow wind', [0, 1, 2]],
+    ['CompAero', '空气动力学', 'Aerodynamics', [0, 1, 2, 3]],
+    ['CompServo', '控制系统', 'Servo control', [0, 1]],
+    [files.seaStateCompKey, '海况', 'Sea state', [0, 1]],
+    ['CompHydro', '水动力', 'Hydrodynamics', [0, 1]],
+    ['CompSub', '下部结构', 'Substructure', [0, 1]],
+    ['CompMooring', '系泊系统', 'Mooring', [0, 1, 2, 3, 4]],
+    ['CompIce', '冰载荷', 'Ice loads', [0, 1, 2]],
+    ['MHK', '海洋水动能', 'Marine hydrokinetics', [0, 1, 2]]
   ];
   const fst = currentCase().set?.[files.fst] || {};
   wrap.innerHTML = '';
-  for (const [key, label, values] of keys) {
+  for (const [key, zh, en, values] of keys) {
     const div = document.createElement('div');
-    div.className = 'toggle';
+    const hydroIssue = key === 'CompHydro' && readinessIssues().find(issue => ['hydrodyn_input_missing', 'hydrodyn_required_missing'].includes(issue.code));
+    div.className = `toggle module-switch-card ${hydroIssue ? 'blocked' : ''}`;
     const select = document.createElement('select');
     const templateOption = document.createElement('option');
     templateOption.value = '';
-    templateOption.textContent = 'template';
+    templateOption.textContent = '模板默认 / Template default';
     select.appendChild(templateOption);
     for (const value of values) {
       const option = document.createElement('option');
       option.value = value;
-      option.textContent = value;
+      option.textContent = value === 0
+        ? '停用 / Disabled (0)'
+        : value === 1
+          ? '启用 / Enabled (1)'
+          : `模式 ${value} / Module mode (${value})`;
       select.appendChild(option);
     }
     select.value = fst[key] ?? '';
     select.onchange = () => {
       if (select.value === '') removeDeep(files.fst, key);
       else setDeep(files.fst, key, Number(select.value));
+      state.actionReadiness = [];
+      renderModuleSwitches();
+      renderReadiness();
+      renderExecutionPlan();
       renderJson();
     };
-    div.innerHTML = `<label>${label}</label><small>${key}</small>`;
+    const dependency = key === 'CompHydro'
+      ? (hydroIssue ? `需要输入 / Requires: ${model.hydroFile || 'HydroDyn.dat'}` : `输入 / Input: ${model.hydroFile || 'HydroDyn.dat'}`)
+      : targetReady ? `写入 / Writes: ${files.fst}` : '等待模型路径 / Waiting for model path';
+    div.innerHTML = `<div class="module-switch-title"><strong>${zh}</strong><span>${en}</span></div><code>${key}</code><small>${escapeHtml(dependency)}</small>`;
     div.appendChild(select);
     wrap.appendChild(div);
   }
@@ -2539,15 +2881,48 @@ function deleteHydroRow(tableName, index) {
   const payload = ensureCaseHydroTables();
   if (!Array.isArray(payload.tables[tableName])) payload.tables[tableName] = [];
   const deleted = payload.tables[tableName][index];
+  if (tableName === 'joints' && deleted) {
+    const jointId = Number(deleted.JointID);
+    const used = (payload.tables.members || []).some(row =>
+      Number(row.MJointID1) === jointId || Number(row.MJointID2) === jointId
+    );
+    if (used) {
+      toast(`节点 ${jointId} 正被构件引用，不能单独删除 / Joint ${jointId} is in use`);
+      return;
+    }
+  }
   payload.tables[tableName].splice(index, 1);
   if (tableName === 'members' && deleted) {
     const memberId = Number(deleted.MemberID);
+    const jointIds = [Number(deleted.MJointID1), Number(deleted.MJointID2)];
+    const propIds = [Number(deleted.MPropSetID1), Number(deleted.MPropSetID2)];
     if (Array.isArray(payload.tables.member_coeffs_cyl)) {
       payload.tables.member_coeffs_cyl = payload.tables.member_coeffs_cyl.filter(row => Number(row.MemberID) !== memberId);
     }
     if (Array.isArray(payload.tables.member_coeffs_rec)) {
       payload.tables.member_coeffs_rec = payload.tables.member_coeffs_rec.filter(row => Number(row.MemberID) !== memberId);
     }
+    const remaining = payload.tables.members || [];
+    const usedJoints = new Set(remaining.flatMap(row => [Number(row.MJointID1), Number(row.MJointID2)]));
+    const usedCylProps = new Set(remaining
+      .filter(row => Number(row.MSecGeom || 1) !== 2)
+      .flatMap(row => [Number(row.MPropSetID1), Number(row.MPropSetID2)]));
+    const usedRecProps = new Set(remaining
+      .filter(row => Number(row.MSecGeom || 1) === 2)
+      .flatMap(row => [Number(row.MPropSetID1), Number(row.MPropSetID2)]));
+    payload.tables.joints = (payload.tables.joints || []).filter(row =>
+      !jointIds.includes(Number(row.JointID)) || usedJoints.has(Number(row.JointID))
+    );
+    if (Number(deleted.MSecGeom || 1) === 2) {
+      payload.tables.prop_sets_rec = (payload.tables.prop_sets_rec || []).filter(row =>
+        !propIds.includes(Number(row.MPropSetID)) || usedRecProps.has(Number(row.MPropSetID))
+      );
+    } else {
+      payload.tables.prop_sets_cyl = (payload.tables.prop_sets_cyl || []).filter(row =>
+        !propIds.includes(Number(row.PropSetID)) || usedCylProps.has(Number(row.PropSetID))
+      );
+    }
+    toast(`已删除构件 ${memberId} 及其独占关联数据 / Removed member ${memberId} bundle`);
   }
   renderHydroTables();
   renderJson();
@@ -2575,6 +2950,27 @@ function addHydroTableRow(tableName) {
   tables[tableName].push(row);
   renderHydroTables();
   renderJson();
+}
+
+function addHydroJointPair() {
+  const payload = ensureCaseHydroTables();
+  const t = payload.tables;
+  if (!Array.isArray(t.joints)) t.joints = [];
+  if (!Array.isArray(t.axial)) t.axial = [];
+  if (!t.axial.length) {
+    t.axial.push({ AxCoefID: 1, AxCd: 1, AxCa: 1, AxCp: 1, AxFDMod: 0, AxVnCOff: 0, AxFDLoFSc: 1 });
+  }
+  const first = nextHydroId(t.joints, 'JointID');
+  const axId = Number(t.axial[0].AxCoefID) || 1;
+  const xs = t.joints.map(row => Number(row.Jointxi)).filter(Number.isFinite);
+  const x = xs.length ? Math.max(...xs) + 12 : 0;
+  t.joints.push(
+    { JointID: first, Jointxi: x, Jointyi: 0, Jointzi: -20, JointAxID: axId, JointOvrlp: 0 },
+    { JointID: first + 1, Jointxi: x, Jointyi: 0, Jointzi: 10, JointAxID: axId, JointOvrlp: 0 }
+  );
+  renderHydroTables();
+  renderJson();
+  toast(`已成对添加节点 ${first}–${first + 1} / Added endpoint pair`);
 }
 
 function initializeHydroObject(tableName) {
@@ -2722,8 +3118,10 @@ function addDefaultMorisonMember(sectionGeometry = 1) {
   const propId = rectangular ? nextHydroId(t.prop_sets_rec, 'MPropSetID') : nextHydroId(t.prop_sets_cyl, 'PropSetID');
   const memberId = nextHydroId(t.members, 'MemberID');
 
-  t.joints.push({ JointID: joint1, Jointxi: 0, Jointyi: 0, Jointzi: -20, JointAxID: axId, JointOvrlp: 0 });
-  t.joints.push({ JointID: joint2, Jointxi: 0, Jointyi: 0, Jointzi: 10, JointAxID: axId, JointOvrlp: 0 });
+  const xs = t.joints.map(row => Number(row.Jointxi)).filter(Number.isFinite);
+  const x = xs.length ? Math.max(...xs) + 12 : 0;
+  t.joints.push({ JointID: joint1, Jointxi: x, Jointyi: 0, Jointzi: -20, JointAxID: axId, JointOvrlp: 0 });
+  t.joints.push({ JointID: joint2, Jointxi: x, Jointyi: 0, Jointzi: 10, JointAxID: axId, JointOvrlp: 0 });
   if (rectangular) t.prop_sets_rec.push({ MPropSetID: propId, PropA: 6, PropB: 6, PropThck: 0.06 });
   else t.prop_sets_cyl.push({ PropSetID: propId, PropD: 6, PropThck: 0.06 });
 
@@ -2746,7 +3144,7 @@ function addDefaultMorisonMember(sectionGeometry = 1) {
   const coeffFields = hydroSchemas()[coeffTable] || HYDRO_VISIBLE_COLUMNS[coeffTable] || [];
   t[coeffTable].push(createMemberCoeffRow(memberId, coeffFields, t[simpleTable] || {}));
   renderAll();
-  toast(`已添加${rectangular ? '矩形' : '圆柱'} Morison 构件 ${memberId}`);
+  toast(`已添加${rectangular ? '矩形' : '圆柱'}构件 ${memberId}：节点 ${joint1}–${joint2}、截面 ${propId}、独立系数已联动 / Member bundle added`);
 }
 
 function hydrodynRuntimeErrors(payload = currentCase().hydrodyn_tables) {
@@ -2838,7 +3236,7 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
   const rows = objectTable ? [hydroObject(tableName)] : hydroRows(tableName);
   wrap.innerHTML = '';
   if (!columns.length) {
-    wrap.innerHTML = '<p class="hint">模板中未找到该表。</p>';
+    wrap.innerHTML = '<p class="hint">模板中未找到该表 / Table not found in template.</p>';
     return;
   }
 
@@ -2848,8 +3246,13 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'mini-button';
-    add.textContent = '添加行';
-    add.onclick = () => addHydroTableRow(tableName);
+    if (tableName === 'joints') {
+      add.textContent = '成对添加端点 / Add endpoint pair';
+      add.onclick = addHydroJointPair;
+    } else {
+      add.textContent = '添加行 / Add row';
+      add.onclick = () => addHydroTableRow(tableName);
+    }
     actions.appendChild(add);
     wrap.appendChild(actions);
   } else if (objectTable && !Object.keys(hydroObject(tableName)).length) {
@@ -2858,7 +3261,7 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'mini-button';
-    add.textContent = '初始化系数';
+    add.textContent = '初始化系数 / Initialize';
     add.onclick = () => initializeHydroObject(tableName);
     actions.appendChild(add);
     wrap.appendChild(actions);
@@ -2872,7 +3275,8 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
   const trh = document.createElement('tr');
   columns.forEach(col => {
     const th = document.createElement('th');
-    th.textContent = col;
+    th.textContent = HYDRO_FIELD_LABELS[col] || col;
+    th.title = col;
     trh.appendChild(th);
   });
   if (!objectTable) {
@@ -2889,7 +3293,7 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
     const td = document.createElement('td');
     td.colSpan = columns.length + (objectTable ? 0 : 1);
     td.className = 'empty-cell';
-    td.textContent = objectTable ? '模板中未找到该系数行。' : '当前为 0 行。';
+    td.textContent = objectTable ? '模板中未找到该系数行 / Coefficient row not found.' : '当前为 0 行 / No rows.';
     tr.appendChild(td);
     body.appendChild(tr);
   } else {
@@ -2908,7 +3312,7 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
         const td = document.createElement('td');
         const btn = document.createElement('button');
         btn.className = 'remove';
-        btn.textContent = '删';
+        btn.textContent = '删除 / Delete';
         btn.onclick = () => deleteHydroRow(tableName, index);
         td.appendChild(btn);
         tr.appendChild(td);
@@ -2930,13 +3334,13 @@ function renderHydroTables() {
   const runtimeErrors = hydrodynRuntimeErrors(payload);
   const referenceWarnings = hydrodynReferenceWarnings(payload);
   const counts = [
-    `格式 ${state.meta?.hydroTables?.format || 'unknown'}`,
-    `运行写出 ${payload.target_format || 'auto_v4_runtime'}`,
-    `joints ${(t.joints || []).length}`,
-    `props C${(t.prop_sets_cyl || []).length}/R${(t.prop_sets_rec || []).length}`,
-    `members ${(t.members || []).length}`,
-    `depth C${(t.depth_cyl || []).length}/R${(t.depth_rec || []).length}`,
-    `member Cd C${(t.member_coeffs_cyl || []).length}/R${(t.member_coeffs_rec || []).length}`
+    `格式 / Format: ${state.meta?.hydroTables?.format || 'unknown'}`,
+    `写出 / Write: ${payload.target_format || 'auto_v4_runtime'}`,
+    `节点 / Joints: ${(t.joints || []).length}`,
+    `截面 / Properties: C${(t.prop_sets_cyl || []).length}/R${(t.prop_sets_rec || []).length}`,
+    `构件 / Members: ${(t.members || []).length}`,
+    `深度系数 / Depth: C${(t.depth_cyl || []).length}/R${(t.depth_rec || []).length}`,
+    `独立系数 / Member Cd: C${(t.member_coeffs_cyl || []).length}/R${(t.member_coeffs_rec || []).length}`
   ];
   const messages = [...baseWarnings, ...referenceWarnings, ...runtimeErrors];
   $('hydroStatus').innerHTML = `${custom ? '当前 case 已启用表格覆盖。' : '当前显示模板表格，编辑后才写入当前 case。'}<br>${counts.join(' | ')}${messages.length ? `<br><span class="danger-text">${messages.map(escapeHtml).join('<br>')}</span>` : ''}`;
@@ -2957,23 +3361,99 @@ function renderHydroTables() {
 function renderSetRows() {
   const wrap = $('setRows');
   wrap.innerHTML = '';
+  const grouped = new Map();
   for (const row of setEntries()) {
-    const div = document.createElement('div');
-    div.className = 'row';
-    div.innerHTML = `<label><span>文件</span><input value="${escapeHtml(row.file)}"></label><label><span>Key</span><input value="${escapeHtml(row.key)}"></label><label><span>值</span><input value="${escapeHtml(String(row.value))}"></label><button class="remove">删</button>`;
-    const [fileInput, keyInput, valueInput] = div.querySelectorAll('input');
-    const sync = () => {
-      removeDeep(row.file, row.key);
-      row.file = fileInput.value.trim();
-      row.key = keyInput.value.trim();
-      row.value = parseValue(valueInput.value.trim());
-      if (row.file && row.key) setDeep(row.file, row.key, row.value);
-      renderJson();
-    };
-    fileInput.onchange = keyInput.onchange = valueInput.onchange = sync;
-    div.querySelector('button').onclick = () => { removeDeep(row.file, row.key); renderAll(); };
-    wrap.appendChild(div);
+    if (!grouped.has(row.file)) grouped.set(row.file, []);
+    grouped.get(row.file).push(row);
   }
+  if (!grouped.size) wrap.innerHTML = '<div class="empty-state compact">当前 case 没有键值覆盖。可从下方选择输入文件并添加参数。</div>';
+
+  const availableFiles = new Set(Object.keys(state.meta?.templateKeys || {}));
+  for (const [file, rows] of grouped) {
+    const modelReady = Boolean(state.meta?.modelProfile?.exists && state.meta?.modelProfile?.fstExists);
+    const invalid = Boolean(modelReady && !availableFiles.has(file));
+    const pending = !modelReady;
+    const group = document.createElement('section');
+    group.className = `override-file-group ${invalid ? 'invalid' : ''}`;
+    const header = document.createElement('header');
+    header.innerHTML = `<div><strong>${escapeHtml(file)}</strong><span>${rows.length} 项覆盖 / ${rows.length} override${rows.length === 1 ? '' : 's'}</span></div><span class="override-file-status ${invalid ? 'error' : pending ? 'warning' : 'ready'}">${invalid ? '目标无效 / Invalid target' : pending ? '等待模型路径 / Awaiting model path' : '已发现 / Discovered'}</span>`;
+    group.appendChild(header);
+    const table = document.createElement('div');
+    table.className = 'override-table';
+    table.innerHTML = '<div class="override-table-head"><span>参数 / Parameter</span><span>覆盖值 / Override</span><span>状态 / Status</span><span class="sr-only">操作</span></div>';
+    const keys = state.meta?.templateKeys?.[file] || [];
+    const keyListId = `overrideKeys-${file.replace(/[^A-Za-z0-9_-]+/g, '_')}`;
+    const datalist = document.createElement('datalist');
+    datalist.id = keyListId;
+    datalist.innerHTML = keys.map(item => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.value || '')}</option>`).join('');
+    group.appendChild(datalist);
+    for (const row of rows) {
+      const line = document.createElement('div');
+      line.className = 'override-table-row';
+      const keyInput = document.createElement('input');
+      keyInput.value = row.key;
+      keyInput.setAttribute('list', keyListId);
+      keyInput.setAttribute('aria-label', `${file} 参数 / Parameter`);
+      const valueInput = document.createElement('input');
+      valueInput.value = String(row.value);
+      valueInput.setAttribute('aria-label', `${row.key} 覆盖值 / Override value`);
+      const status = document.createElement('span');
+      status.className = invalid ? 'override-row-status error' : pending ? 'override-row-status warning' : 'override-row-status';
+      status.textContent = invalid ? '文件不在当前模型中 / File is outside current model' : pending ? '等待模型路径 / Awaiting model path' : '覆盖 / Override';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove';
+      remove.textContent = '删除';
+      remove.title = `删除 ${row.key}`;
+      const sync = () => {
+        const nextKey = keyInput.value.trim();
+        const nextValue = parseValue(valueInput.value.trim());
+        removeDeep(file, row.key);
+        if (nextKey) setDeep(file, nextKey, nextValue);
+        state.actionReadiness = [];
+        renderJson();
+        renderReadiness();
+      };
+      keyInput.onchange = valueInput.onchange = sync;
+      remove.onclick = () => { removeDeep(file, row.key); state.actionReadiness = []; renderAll(); };
+      line.append(keyInput, valueInput, status, remove);
+      table.appendChild(line);
+    }
+    group.appendChild(table);
+    wrap.appendChild(group);
+  }
+  renderOverrideAddControl();
+}
+
+function renderOverrideAddControl() {
+  const wrap = $('setAddControl');
+  if (!wrap) return;
+  const files = Object.keys(state.meta?.templateKeys || {});
+  const fallback = activeFiles().fst;
+  const selectable = files.length ? files : [fallback];
+  const previous = $('setFileSelect')?.value;
+  const file = selectable.includes(previous) ? previous : (selectable.includes(fallback) ? fallback : selectable[0]);
+  wrap.innerHTML = `<label><span>目标文件 / Target file</span><select id="setFileSelect">${selectable.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('')}</select></label><label><span>参数 / Parameter</span><input id="setKeyInput" list="setKeyOptions" placeholder="例如 TMax"></label><datalist id="setKeyOptions"></datalist><button id="addSetBtn" class="mini-button" type="button">添加覆盖 / Add override</button>`;
+  const fileSelect = $('setFileSelect');
+  fileSelect.value = file;
+  const refreshKeyOptions = () => {
+    const rows = state.meta?.templateKeys?.[fileSelect.value] || [];
+    $('setKeyOptions').innerHTML = rows.map(row => `<option value="${escapeHtml(row.key)}">${escapeHtml(row.value || '')}</option>`).join('');
+  };
+  refreshKeyOptions();
+  fileSelect.onchange = refreshKeyOptions;
+  $('addSetBtn').onclick = () => {
+    const key = $('setKeyInput').value.trim();
+    if (!key) {
+      $('setKeyInput').focus();
+      toast('先输入或选择参数名 / Choose a parameter first');
+      return;
+    }
+    const template = (state.meta?.templateKeys?.[fileSelect.value] || []).find(row => row.key === key);
+    setDeep(fileSelect.value, key, parseValue(String(template?.value ?? '0').replace(/^"|"$/g, '')));
+    state.actionReadiness = [];
+    renderAll();
+  };
 }
 
 function renderMatrixRows() {
@@ -3317,6 +3797,40 @@ async function loadMeta() {
   state.scenarioList = list.scenarios;
 }
 
+function resetModelWorkspace() {
+  state.selectedModelFile = '';
+  state.selectedOutlistFile = '';
+  state.selectedModuleFile = '';
+  state.moduleDocuments.clear();
+}
+
+async function activateModelContext(modelId, createScenario = false) {
+  state.selectedModelId = modelId;
+  state.selectedRuntimeId = '';
+  localStorage.setItem('openfastGui.modelId', state.selectedModelId);
+  localStorage.removeItem('openfastGui.runtimeId');
+  await loadMeta();
+  resetModelWorkspace();
+  if (createScenario) {
+    const model = state.meta?.modelProfile || {};
+    state.scenarioFile = 'ui_scenario.json';
+    state.scenario = {
+      name: 'ui_scenario',
+      description: `为 ${model.name || model.id || 'selected model'} 创建的未保存场景 / Unsaved scenario for selected model`,
+      model_id: state.selectedModelId,
+      runtime_id: state.selectedRuntimeId,
+      cases: []
+    };
+    state.selectedCase = 0;
+    normalizeScenario();
+  } else {
+    state.scenario.model_id = state.selectedModelId;
+    state.scenario.runtime_id = state.selectedRuntimeId;
+  }
+  state.actionReadiness = [];
+  renderAll();
+}
+
 async function loadScenario(file) {
   const data = await api(`/api/scenario?file=${encodeURIComponent(file)}`);
   state.scenarioFile = data.file;
@@ -3378,24 +3892,45 @@ async function startJob(generateOnly) {
   if (hydroErrors.length) throw new Error(hydroErrors.join('；'));
   const configurationErrors = scenarioConfigurationErrors();
   if (configurationErrors.length) throw new Error(configurationErrors.join('；'));
-  await saveScenario();
-  const data = await api('/api/jobs', {
+  const preflight = await api('/api/readiness', {
     method: 'POST',
     body: JSON.stringify({
-      file: state.scenarioFile,
       scenario: state.scenario,
-      options: {
-        generateOnly,
-        overwrite: $('overwriteRun').checked,
-        continueOnFail: $('continueOnFail').checked,
-        resume: $('resumeCompleted').checked,
-        plotComparison: $('plotComparison').checked && !generateOnly,
-        workers: Math.min(4, Math.max(1, Number($('parallelWorkers').value) || 1)),
-        modelId: state.selectedModelId,
-        runtimeId: state.selectedRuntimeId
-      }
+      options: { modelId: state.selectedModelId, runtimeId: state.selectedRuntimeId, generateOnly }
     })
   });
+  state.actionReadiness = preflight.readiness || [];
+  renderReadiness();
+  const blockers = state.actionReadiness.filter(isReadinessBlocked);
+  if (blockers.length) {
+    const first = issueCopy(blockers[0]);
+    throw new Error(`${first.zh} / ${first.en}`);
+  }
+  await saveScenario();
+  let data;
+  try {
+    data = await api('/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({
+        file: state.scenarioFile,
+        scenario: state.scenario,
+        options: {
+          generateOnly,
+          overwrite: $('overwriteRun').checked,
+          continueOnFail: $('continueOnFail').checked,
+          resume: $('resumeCompleted').checked,
+          plotComparison: $('plotComparison').checked && !generateOnly,
+          workers: Math.min(4, Math.max(1, Number($('parallelWorkers').value) || 1)),
+          modelId: state.selectedModelId,
+          runtimeId: state.selectedRuntimeId
+        }
+      })
+    });
+  } catch (error) {
+    state.actionReadiness = error.issues || state.actionReadiness;
+    renderReadiness();
+    throw error;
+  }
   state.currentJob = data.jobId;
   state.jobRunning = true;
   renderJobFigures({ comparisonFigures: [] });
@@ -3405,8 +3940,10 @@ async function startJob(generateOnly) {
 }
 
 function setJobButtons(enabled) {
-  $('generateBtn').disabled = !enabled;
-  $('runBtn').disabled = !enabled;
+  const blockers = readinessIssues().filter(isReadinessBlocked);
+  const generationBlockers = blockers.filter(issue => issue.code !== 'runtime_missing');
+  $('generateBtn').disabled = !enabled || generationBlockers.length > 0;
+  $('runBtn').disabled = !enabled || blockers.length > 0;
   $('parallelWorkers').disabled = !enabled;
   $('resumeCompleted').disabled = !enabled;
 }
@@ -3506,34 +4043,33 @@ function bindEvents() {
   });
   $('modelSelect').onchange = async () => {
     collectForm();
-    state.selectedModelId = $('modelSelect').value;
-    state.selectedRuntimeId = '';
-    localStorage.setItem('openfastGui.modelId', state.selectedModelId);
-    localStorage.removeItem('openfastGui.runtimeId');
-    await loadMeta();
-    state.selectedModelFile = '';
-    state.selectedOutlistFile = '';
-    state.selectedModuleFile = '';
-    state.moduleDocuments.clear();
-    delete currentCase().hydrodyn_tables;
-    renderAll();
+    const targetModelId = $('modelSelect').value;
+    const currentModelId = state.scenario.model_id || state.selectedModelId;
+    if (currentModelId && currentModelId !== targetModelId && state.scenario.cases?.length) {
+      const createScenario = window.confirm('当前场景属于另一模型。继续会为目标模型创建一个新的未保存场景；当前未保存编辑不会自动写入磁盘。\n\nThe current scenario belongs to another model. Continue to create a new unsaved scenario for the selected model?');
+      if (!createScenario) {
+        $('modelSelect').value = state.selectedModelId;
+        return;
+      }
+      await activateModelContext(targetModelId, true);
+      return;
+    }
+    await activateModelContext(targetModelId, false);
   };
   $('runtimeSelect').onchange = async () => {
     collectForm();
     state.selectedRuntimeId = $('runtimeSelect').value;
     localStorage.setItem('openfastGui.runtimeId', state.selectedRuntimeId);
     await loadMeta();
-    state.selectedModelFile = '';
-    state.selectedOutlistFile = '';
-    state.selectedModuleFile = '';
-    delete currentCase().hydrodyn_tables;
+    state.scenario.runtime_id = state.selectedRuntimeId;
+    resetModelWorkspace();
+    state.actionReadiness = [];
     renderAll();
   };
   $('presetSelect').onchange = updatePresetDescription;
   $('applyPresetBtn').onclick = applyPreset;
   $('addCaseBtn').onclick = () => { collectForm(); state.scenario.cases.push(emptyCase()); state.selectedCase = state.scenario.cases.length - 1; renderAll(); };
   $('newScenarioBtn').onclick = () => { state.scenarioFile = 'ui_scenario.json'; state.scenario = { name: 'ui_scenario', description: 'Created from visual UI', model_id: state.selectedModelId, runtime_id: state.selectedRuntimeId, cases: [emptyCase()] }; state.selectedCase = 0; renderAll(); };
-  $('addSetBtn').onclick = () => { setDeep(activeFiles().fst, 'TMax', 120); renderAll(); };
   $('addMatrixBtn').onclick = () => { delete currentCase().matrix_edits; renderAll(); toast('已清空矩阵修改'); };
   $('addMorisonBtn').onclick = () => addDefaultMorisonMember(1);
   $('addMorisonRecBtn').onclick = () => addDefaultMorisonMember(2);
@@ -3553,6 +4089,9 @@ function bindEvents() {
   $('generateBtn').onclick = () => startJob(true).catch(err => toast(err.message));
   $('runBtn').onclick = () => startJob(false).catch(err => toast(err.message));
   $('refreshBtn').onclick = async () => { await loadMeta(); await loadResultsCatalog(); renderAll(); await restoreLatestJob(); };
+  $('configurePathsBtn').onclick = openProfileConfiguration;
+  $('validateProfilePathsBtn').onclick = () => validateProfilePaths().catch(error => toast(error.message));
+  $('saveProfilePathsBtn').onclick = () => saveProfilePaths().catch(error => toast(error.message));
   $('jobStatusButton').onclick = () => setActiveTab('runlog');
   $('scenarioSearch').oninput = () => { state.scenarioQuery = $('scenarioSearch').value; renderScenarioList(); };
   $('plotComparison').onchange = updatePlotComparisonPreference;
@@ -3635,7 +4174,10 @@ async function init() {
   renderJobState({ status: 'idle' });
   await loadMeta();
   if (state.scenarioList?.length) {
-    const first = state.scenarioList.find(s => s.file === 'focal_irregular_wave_compare.json') || state.scenarioList[0];
+    const preferred = state.selectedModelId === 'iea_15_240_umaine'
+      ? state.scenarioList.find(s => s.file.startsWith('iea_'))
+      : state.scenarioList.find(s => s.file === 'focal_irregular_wave_compare.json');
+    const first = preferred || state.scenarioList[0];
     await loadScenario(first.file);
   } else {
     normalizeScenario();

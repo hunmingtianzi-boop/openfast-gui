@@ -86,8 +86,8 @@ a:focus-visible {
   border-bottom: 1px solid var(--line);
   background: rgb(255 255 255 / 0.94);
   backdrop-filter: blur(12px);
-  position: sticky;
-  top: 0;
+  position: relative;
+  top: auto;
   z-index: 20;
 }
 
@@ -283,8 +283,8 @@ a:focus-visible {
 
 .sidebar {
   position: sticky;
-  top: 84px;
-  height: calc(100dvh - 100px);
+  top: 16px;
+  height: calc(100dvh - 32px);
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(260px, 1fr) auto auto;
@@ -508,7 +508,7 @@ input:focus, select:focus, textarea:focus {
 
 .tabs {
   position: sticky;
-  top: 68px;
+  top: 0;
   z-index: 12;
   display: flex;
   gap: 2px;
@@ -1900,6 +1900,56 @@ input:focus, select:focus, textarea:focus {
   gap: 8px;
 }
 
+.hydro-rectangle-support {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--success);
+  background: #f3faf7;
+  color: #315f55;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.hydro-rectangle-support[data-status="unavailable"] {
+  border-left-color: var(--muted);
+  background: #f4f6f5;
+  color: var(--muted);
+}
+
+.hydro-rectangle-support[data-status="blocked"] {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.hydro-rectangle-support strong { flex: 0 0 auto; }
+.hydro-linked-panel { border-color: #a8cfc5; background: #fbfefd; }
+.hydro-linked-panel[data-empty="false"] { box-shadow: inset 3px 0 0 var(--accent); }
+.hydro-linked-head { align-items: end; gap: 16px; }
+.hydro-linked-head h2 { margin-top: 3px; }
+.hydro-linked-head label { flex: 0 1 330px; }
+.hydro-link-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.hydro-link-summary span { padding: 4px 7px; border: 1px solid #c7dbd5; border-radius: 4px; background: #fff; color: var(--muted); font: 600 9px/1.35 var(--mono); }
+.hydro-link-summary strong { color: var(--ink); }
+.hydro-linked-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.hydro-linked-card { min-width: 0; padding: 11px; border: 1px solid #d0dfdb; border-radius: 8px; background: #fff; }
+.hydro-linked-card.wide { grid-column: 1 / -1; }
+.hydro-linked-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.hydro-linked-card-head strong { font-size: 11px; }
+.hydro-linked-card-head span { color: var(--muted); font-size: 9px; text-align: right; }
+.hydro-linked-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 8px; }
+.hydro-linked-fields label { min-width: 0; }
+.hydro-linked-fields label > span { display: block; min-height: 2.6em; margin-bottom: 4px; color: var(--muted); font-size: 9px; line-height: 1.3; }
+.hydro-linked-fields input, .hydro-linked-fields select { min-width: 0; font: 10px var(--mono); }
+.hydro-row-actions { min-width: 185px; white-space: nowrap; }
+.hydro-row-actions .mini-button, .hydro-row-actions .remove { width: auto; margin-right: 6px; }
+#tab-hydro .data-table tr.is-linked-selection td { background: #eff8f5; }
+#tab-hydro .data-table tr.is-linked-selection td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+[data-hydro-rectangle][hidden] { display: none; }
+
 #tab-hydro .data-table th {
   min-width: 7rem;
   white-space: normal;
@@ -1916,6 +1966,9 @@ input:focus, select:focus, textarea:focus {
     justify-content: flex-start;
     margin-top: 12px;
   }
+
+  .hydro-linked-grid { grid-template-columns: 1fr; }
+  .hydro-linked-card.wide { grid-column: auto; }
 }
 
 @media (max-width: 700px) {
@@ -1933,6 +1986,14 @@ input:focus, select:focus, textarea:focus {
   #tab-hydro .hydro-table-actions {
     justify-content: stretch;
   }
+
+  .hydro-rectangle-support, .hydro-linked-card-head, .hydro-linked-head {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .hydro-linked-head label { width: 100%; }
+  .hydro-linked-card-head span { text-align: left; }
 }
 .module-field-groups, .module-table-groups, .module-matrix-groups { padding: 0 17px; }
 
@@ -2462,11 +2523,11 @@ input:hover, select:hover, textarea:hover { border-color: #88a8a1; }
   .context-file, .context-name, .context-description { grid-column: span 2; }
 }
 
-/* Model readiness: one persistent status surface plus focused page-level context. */
+/* Model readiness stays in normal document flow so it never covers editors. */
 .workspace-context {
-  position: sticky;
-  top: 68px;
-  z-index: 14;
+  position: relative;
+  top: auto;
+  z-index: auto;
 }
 
 .readiness-bar {

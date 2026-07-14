@@ -47,7 +47,8 @@ const state = {
   externalToolPollTimer: null,
   jsonDirty: false,
   actionReadiness: [],
-  profileValidation: null
+  profileValidation: null,
+  selectedHydroMemberId: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -64,7 +65,12 @@ const READINESS_COPY = {
   dependency_missing: ['模型依赖仍有缺失项', 'Some model dependencies are missing'],
   hydrodyn_input_missing: ['HydroDyn 输入文件未找到', 'HydroDyn input is missing'],
   hydrodyn_required_missing: ['HydroDyn 已启用，但输入文件未找到', 'HydroDyn is enabled but its input is missing'],
+  hydrodyn_format_incompatible: ['HydroDyn 文件格式与当前运行时不一致', 'HydroDyn input format does not match the selected runtime'],
+  hydrodyn_format_required: ['已启用的 HydroDyn 必须使用原生 v5 表格格式', 'Enabled HydroDyn requires the native v5 table format'],
   scenario_model_mismatch: ['场景与当前模型不一致', 'Scenario and selected model do not match'],
+  scenario_runtime_mismatch: ['场景与当前 OpenFAST 运行时不一致', 'Scenario and selected OpenFAST runtime do not match'],
+  runtime_format_incompatible: ['模型与 OpenFAST 主版本不兼容', 'Model and OpenFAST major version are incompatible'],
+  runtime_version_incompatible: ['可执行文件报告的 OpenFAST 版本不兼容', 'The executable reports an incompatible OpenFAST version'],
   override_target_unknown: ['覆盖目标不属于当前模型', 'Override target is not part of the selected model'],
   override_target_missing: ['覆盖目标文件不存在', 'Override target file is missing']
 };
@@ -129,7 +135,11 @@ const HYDRO_VISIBLE_COLUMNS = {
   prop_sets_rec: ['MPropSetID', 'PropA', 'PropB', 'PropThck'],
   members: ['MemberID', 'MJointID1', 'MJointID2', 'MPropSetID1', 'MPropSetID2', 'MSecGeom', 'MSpinOrient', 'MDivSize', 'MCoefMod', 'MHstLMod', 'PropPot'],
   simple_cyl: ['SimplCd', 'SimplCdMG', 'SimplCa', 'SimplCaMG', 'SimplCp', 'SimplCpMG', 'SimplAxCd', 'SimplAxCdMG', 'SimplAxCa', 'SimplAxCaMG', 'SimplAxCp', 'SimplAxCpMG', 'SimplCb', 'SimplCbMG'],
-  member_coeffs_cyl: ['MemberID', 'MemberCd1', 'MemberCd2', 'MemberCdMG1', 'MemberCdMG2', 'MemberCa1', 'MemberCa2', 'MemberCaMG1', 'MemberCaMG2', 'MemberCp1', 'MemberCp2', 'MemberCpMG1', 'MemberCpMG2', 'MemberAxCd1', 'MemberAxCd2', 'MemberAxCdMG1', 'MemberAxCdMG2', 'MemberAxCa1', 'MemberAxCa2', 'MemberAxCaMG1', 'MemberAxCaMG2', 'MemberAxCp1', 'MemberAxCp2', 'MemberAxCpMG1', 'MemberAxCpMG2', 'MemberCb1', 'MemberCb2', 'MemberCbMG1', 'MemberCbMG2']
+  simple_rec: ['SimplCdA', 'SimplCdAMG', 'SimplCdB', 'SimplCdBMG', 'SimplCaA', 'SimplCaAMG', 'SimplCaB', 'SimplCaBMG', 'SimplCp', 'SimplCpMG', 'SimplAxCd', 'SimplAxCdMG', 'SimplAxCa', 'SimplAxCaMG', 'SimplAxCp', 'SimplAxCpMG', 'SimplCb', 'SimplCbMG'],
+  depth_cyl: ['Dpth', 'DpthCd', 'DpthCdMG', 'DpthCa', 'DpthCaMG', 'DpthCp', 'DpthCpMG', 'DpthAxCd', 'DpthAxCdMG', 'DpthAxCa', 'DpthAxCaMG', 'DpthAxCp', 'DpthAxCpMG', 'DpthCb', 'DpthCbMG'],
+  depth_rec: ['Dpth', 'DpthCdA', 'DpthCdAMG', 'DpthCdB', 'DpthCdBMG', 'DpthCaA', 'DpthCaAMG', 'DpthCaB', 'DpthCaBMG', 'DpthCp', 'DpthCpMG', 'DpthAxCd', 'DpthAxCdMG', 'DpthAxCa', 'DpthAxCaMG', 'DpthAxCp', 'DpthAxCpMG', 'DpthCb', 'DpthCbMG'],
+  member_coeffs_cyl: ['MemberID', 'MemberCd1', 'MemberCd2', 'MemberCdMG1', 'MemberCdMG2', 'MemberCa1', 'MemberCa2', 'MemberCaMG1', 'MemberCaMG2', 'MemberCp1', 'MemberCp2', 'MemberCpMG1', 'MemberCpMG2', 'MemberAxCd1', 'MemberAxCd2', 'MemberAxCdMG1', 'MemberAxCdMG2', 'MemberAxCa1', 'MemberAxCa2', 'MemberAxCaMG1', 'MemberAxCaMG2', 'MemberAxCp1', 'MemberAxCp2', 'MemberAxCpMG1', 'MemberAxCpMG2', 'MemberCb1', 'MemberCb2', 'MemberCbMG1', 'MemberCbMG2'],
+  member_coeffs_rec: ['MemberID', 'MemberCdA1', 'MemberCdA2', 'MemberCdAMG1', 'MemberCdAMG2', 'MemberCdB1', 'MemberCdB2', 'MemberCdBMG1', 'MemberCdBMG2', 'MemberCaA1', 'MemberCaA2', 'MemberCaAMG1', 'MemberCaAMG2', 'MemberCaB1', 'MemberCaB2', 'MemberCaBMG1', 'MemberCaBMG2', 'MemberCp1', 'MemberCp2', 'MemberCpMG1', 'MemberCpMG2', 'MemberAxCd1', 'MemberAxCd2', 'MemberAxCdMG1', 'MemberAxCdMG2', 'MemberAxCa1', 'MemberAxCa2', 'MemberAxCaMG1', 'MemberAxCaMG2', 'MemberAxCp1', 'MemberAxCp2', 'MemberAxCpMG1', 'MemberAxCpMG2', 'MemberCb1', 'MemberCb2', 'MemberCbMG1', 'MemberCbMG2']
 };
 const HYDRO_TABLE_TITLES = {
   axial: '轴向系数 / Axial coefficients',
@@ -168,12 +178,18 @@ function activeFiles() {
 }
 
 function readinessIssueKey(issue) {
-  return [issue.code, issue.file, issue.path, issue.scenarioModelId, issue.modelId].filter(Boolean).join('|');
+  return [issue.code, issue.file, issue.path, issue.scenarioModelId, issue.modelId, issue.scenarioRuntimeId, issue.runtimeId].filter(Boolean).join('|');
 }
 
 function issueCopy(issue) {
   const copy = READINESS_COPY[issue.code] || ['运行环境需要检查', 'Run environment needs review'];
-  const technical = issue.path || issue.file || (issue.scenarioModelId ? `${issue.scenarioModelId} → ${issue.modelId || state.selectedModelId}` : '');
+  const technical = issue.path
+    || issue.file
+    || (issue.scenarioModelId ? `${issue.scenarioModelId} → ${issue.modelId || state.selectedModelId}` : '')
+    || (issue.scenarioRuntimeId ? `${issue.scenarioRuntimeId} → ${issue.runtimeId || state.selectedRuntimeId}` : '')
+    || (issue.runtimeFormat && issue.supportedRuntimeFormats ? `${issue.runtimeFormat} → ${issue.supportedRuntimeFormats.join(', ')}` : '')
+    || issue.version
+    || (issue.hydroFormat && issue.runtimeFormat ? `${issue.hydroFormat} → ${issue.runtimeFormat}` : '');
   return { zh: copy[0], en: copy[1], technical };
 }
 
@@ -185,6 +201,12 @@ function scenarioReadinessIssues() {
     issues.push({
       code: 'scenario_model_mismatch', severity: 'error', scopes: ['global', 'context', 'compose', 'advanced'],
       scenarioModelId: state.scenario.model_id, modelId: state.selectedModelId
+    });
+  }
+  if (state.scenario?.runtime_id && state.selectedRuntimeId && state.scenario.runtime_id !== state.selectedRuntimeId) {
+    issues.push({
+      code: 'scenario_runtime_mismatch', severity: 'error', scopes: ['global', 'context', 'compose', 'advanced'],
+      scenarioRuntimeId: state.scenario.runtime_id, runtimeId: state.selectedRuntimeId
     });
   }
   if (!(model.exists && model.fstExists)) return issues;
@@ -265,7 +287,7 @@ function renderReadiness() {
       ? `${warnings.length} 项需要复核 / ${warnings.length} item${warnings.length > 1 ? 's' : ''} to review`
       : '运行环境已就绪 / Run environment ready';
   $('readinessDescription').textContent = first
-    ? `${issueCopy(first).zh}。${issueCopy(first).en}${issueCopy(first).technical ? ` ${issueCopy(first).technical}` : ''}`
+    ? `${issueCopy(first).zh} / ${issueCopy(first).en}${issueCopy(first).technical ? ` · ${issueCopy(first).technical}` : ''}`
     : `${model.name || model.id || 'Model'} · ${model.fst || ''} · ${runtime.name || runtime.id || 'OpenFAST'}`;
   const issueWrap = $('readinessIssues');
   issueWrap.innerHTML = issues.slice(0, 3).map(issue => {
@@ -310,6 +332,7 @@ function emptyCase() {
   return {
     name: `case_${String(state.scenario.cases.length + 1).padStart(2, '0')}`,
     notes: '',
+    hydro_file: state.meta?.modelProfile?.hydroFile || undefined,
     set: {
       [files.fst]: {
         TMax: 120,
@@ -2656,21 +2679,25 @@ function renderModuleSwitches() {
   if (target) target.textContent = targetReady
     ? `主输入 / Main input: ${files.fst}`
     : `主输入不可用 / Main input unavailable: ${files.fst}`;
-  const keys = [
-    ['CompElast', '结构动力学', 'Structural dynamics', [1, 2, 3]],
-    ['CompInflow', '入流风', 'Inflow wind', [0, 1, 2]],
-    ['CompAero', '空气动力学', 'Aerodynamics', [0, 1, 2, 3]],
-    ['CompServo', '控制系统', 'Servo control', [0, 1]],
-    [files.seaStateCompKey, '海况', 'Sea state', [0, 1]],
-    ['CompHydro', '水动力', 'Hydrodynamics', [0, 1]],
-    ['CompSub', '下部结构', 'Substructure', [0, 1]],
-    ['CompMooring', '系泊系统', 'Mooring', [0, 1, 2, 3, 4]],
-    ['CompIce', '冰载荷', 'Ice loads', [0, 1, 2]],
-    ['MHK', '海洋水动能', 'Marine hydrokinetics', [0, 1, 2]]
+  const definitions = [
+    ['ModCoupling', '模块耦合算法', 'Module coupling', [[1, '松耦合 / Loose'], [2, '紧耦合·固定雅可比 / Tight, fixed Jacobian'], [3, '紧耦合·自动雅可比 / Tight, automatic Jacobian']]],
+    ['CompElast', '结构动力学', 'Structural dynamics', [[1, 'ElastoDyn'], [2, 'ElastoDyn + BeamDyn'], [3, '简化 ElastoDyn / Simplified ElastoDyn']]],
+    ['CompInflow', '入流风', 'Inflow wind', [[0, '关闭 / Disabled'], [1, 'InflowWind'], [2, '外部入流 / ExtInflow']]],
+    ['CompAero', '空气动力学', 'Aerodynamics', [[0, '关闭 / Disabled'], [1, 'AeroDisk'], [2, 'AeroDyn'], [3, '外部载荷 / ExtLoads']]],
+    ['CompServo', '控制与电气传动', 'Servo control', [[0, '关闭 / Disabled'], [1, 'ServoDyn']]],
+    [files.seaStateCompKey, '海况', 'Sea state', [[0, '关闭 / Disabled'], [1, 'SeaState']]],
+    ['CompHydro', '水动力', 'Hydrodynamics', [[0, '关闭 / Disabled'], [1, 'HydroDyn']]],
+    ['CompSub', '下部结构动力学', 'Substructure', [[0, '关闭 / Disabled'], [1, 'SubDyn'], [2, '外部平台 MCKF / External platform MCKF']]],
+    ['CompMooring', '系泊系统', 'Mooring', [[0, '关闭 / Disabled'], [1, 'MAP++'], [2, 'FEAMooring'], [3, 'MoorDyn'], [4, 'OrcaFlex']]],
+    ['CompIce', '冰载荷', 'Ice loads', [[0, '关闭 / Disabled'], [1, 'IceFloe'], [2, 'IceDyn']]],
+    ['CompSoil', '土壤—结构动力学', 'Soil–structure dynamics', [[0, '关闭 / Disabled'], [1, 'SoilDyn']]],
+    ['MHK', '海洋水动能机组', 'Marine hydrokinetics', [[0, '非 MHK / Not MHK'], [1, '固定式 MHK / Fixed MHK'], [2, '浮式 MHK / Floating MHK']]]
   ];
+  const discoveredKeys = new Set((state.meta?.templateKeys?.[files.fst] || []).map(row => row.key));
+  const keys = definitions.filter(([key]) => discoveredKeys.has(key) || Object.prototype.hasOwnProperty.call(currentCase().set?.[files.fst] || {}, key));
   const fst = currentCase().set?.[files.fst] || {};
   wrap.innerHTML = '';
-  for (const [key, zh, en, values] of keys) {
+  for (const [key, zh, en, options] of keys) {
     const div = document.createElement('div');
     const hydroIssue = key === 'CompHydro' && readinessIssues().find(issue => ['hydrodyn_input_missing', 'hydrodyn_required_missing'].includes(issue.code));
     div.className = `toggle module-switch-card ${hydroIssue ? 'blocked' : ''}`;
@@ -2679,14 +2706,10 @@ function renderModuleSwitches() {
     templateOption.value = '';
     templateOption.textContent = '模板默认 / Template default';
     select.appendChild(templateOption);
-    for (const value of values) {
+    for (const [value, label] of options) {
       const option = document.createElement('option');
       option.value = value;
-      option.textContent = value === 0
-        ? '停用 / Disabled (0)'
-        : value === 1
-          ? '启用 / Enabled (1)'
-          : `模式 ${value} / Module mode (${value})`;
+      option.textContent = `${label} (${value})`;
       select.appendChild(option);
     }
     select.value = fst[key] ?? '';
@@ -2857,6 +2880,12 @@ function hydroColumns(tableName) {
   return filtered.length ? filtered : schema;
 }
 
+function rectangularHydroSupported(payload = hydroPayloadView()) {
+  const target = payload?.target_format || targetFormatForRuntime();
+  const meta = state.meta?.hydroTables || {};
+  return target === 'v5' && meta.format === 'v5' && meta.runtimeFormat === 'v5';
+}
+
 function coerceHydroValue(field, raw) {
   const text = String(raw).trim();
   if (field === 'PropPot') return /^true$/i.test(text);
@@ -2872,7 +2901,20 @@ function setHydroCell(tableName, index, field, rawValue, objectTable = false) {
   if (!payload.tables[tableName]) payload.tables[tableName] = objectTable ? {} : [];
   const target = objectTable ? payload.tables[tableName] : payload.tables[tableName][index];
   if (!target) return;
+  const previous = tableName === 'members' && !objectTable ? cloneData(target) : null;
+  if (tableName === 'members' && field === 'MSecGeom' && Number(rawValue) === 2 && !rectangularHydroSupported(payload)) {
+    toast('矩形构件只能写入原生 HydroDyn v5 模板 / Rectangle members require a native HydroDyn v5 template');
+    renderHydroTables();
+    return;
+  }
   target[field] = coerceHydroValue(field, rawValue);
+  if (previous) {
+    const warnings = syncHydroMemberBundle(payload, index, previous);
+    if (Number(previous.MemberID) === Number(state.selectedHydroMemberId) || state.selectedHydroMemberId === null) {
+      state.selectedHydroMemberId = Number(target.MemberID);
+    }
+    if (warnings.length) toast(warnings.join(' · '));
+  }
   renderHydroTables();
   renderJson();
 }
@@ -2921,6 +2963,9 @@ function deleteHydroRow(tableName, index) {
       payload.tables.prop_sets_cyl = (payload.tables.prop_sets_cyl || []).filter(row =>
         !propIds.includes(Number(row.PropSetID)) || usedCylProps.has(Number(row.PropSetID))
       );
+    }
+    if (Number(state.selectedHydroMemberId) === memberId) {
+      state.selectedHydroMemberId = remaining.length ? Number(remaining[0].MemberID) : null;
     }
     toast(`已删除构件 ${memberId} 及其独占关联数据 / Removed member ${memberId} bundle`);
   }
@@ -3021,6 +3066,144 @@ function createMemberCoeffRow(memberId, fields, simple) {
   return row;
 }
 
+function convertHydroPropertyRow(source, rectangular, propId) {
+  const thickness = Number(source?.PropThck);
+  if (rectangular) {
+    const diameter = Number(source?.PropD);
+    const sideA = Number(source?.PropA);
+    const sideB = Number(source?.PropB);
+    const fallback = Number.isFinite(diameter) && diameter > 0 ? diameter : 6;
+    return {
+      MPropSetID: propId,
+      PropA: Number.isFinite(sideA) && sideA > 0 ? sideA : fallback,
+      PropB: Number.isFinite(sideB) && sideB > 0 ? sideB : fallback,
+      PropThck: Number.isFinite(thickness) && thickness >= 0 ? thickness : 0.06
+    };
+  }
+  const sideA = Number(source?.PropA);
+  const sideB = Number(source?.PropB);
+  const diameter = Number(source?.PropD);
+  return {
+    PropSetID: propId,
+    PropD: Number.isFinite(diameter) && diameter > 0 ? diameter : Math.max(sideA || 0, sideB || 0, 6),
+    PropThck: Number.isFinite(thickness) && thickness >= 0 ? thickness : 0.06
+  };
+}
+
+function transferHydroMemberCoefficients(source, memberId, rectangular, fields, simple) {
+  const target = createMemberCoeffRow(memberId, fields, simple);
+  for (const field of fields) {
+    if (field !== 'MemberID' && source?.[field] !== undefined) target[field] = source[field];
+  }
+  if (rectangular && source) {
+    for (const suffix of ['1', '2', 'MG1', 'MG2']) {
+      for (const family of ['Cd', 'Ca']) {
+        const value = source[`Member${family}${suffix}`];
+        if (value !== undefined) {
+          target[`Member${family}A${suffix}`] = value;
+          target[`Member${family}B${suffix}`] = value;
+        }
+      }
+    }
+  } else if (source) {
+    for (const suffix of ['1', '2', 'MG1', 'MG2']) {
+      for (const family of ['Cd', 'Ca']) {
+        const value = source[`Member${family}A${suffix}`] ?? source[`Member${family}B${suffix}`];
+        if (value !== undefined) target[`Member${family}${suffix}`] = value;
+      }
+    }
+  }
+  return target;
+}
+
+function syncHydroMemberBundle(payload, memberIndex, previous = {}) {
+  const t = payload?.tables || {};
+  const warnings = [];
+  for (const name of ['axial', 'joints', 'prop_sets_cyl', 'prop_sets_rec', 'member_coeffs_cyl', 'member_coeffs_rec', 'members']) {
+    if (!Array.isArray(t[name])) t[name] = [];
+  }
+  const member = t.members[memberIndex];
+  if (!member) return warnings;
+
+  const memberId = Number(member.MemberID);
+  const previousId = Number(previous.MemberID);
+  if (Number.isFinite(previousId) && Number.isFinite(memberId) && previousId !== memberId) {
+    for (const tableName of ['member_coeffs_cyl', 'member_coeffs_rec']) {
+      for (const row of t[tableName]) {
+        if (Number(row.MemberID) === previousId) row.MemberID = memberId;
+      }
+    }
+    warnings.push(`构件号已同步到系数表 / Member ID synced: ${previousId} → ${memberId}`);
+  }
+
+  const shape = Number(member.MSecGeom || 1);
+  const previousShape = Number(previous.MSecGeom || 1);
+  const rectangular = shape === 2;
+  const axId = Number(t.axial[0]?.AxCoefID) || 1;
+  if (!t.axial.length) t.axial.push({ AxCoefID: axId, AxCd: 1, AxCa: 1, AxCp: 1, AxFDMod: 0, AxVnCOff: 0, AxFDLoFSc: 1 });
+
+  const xs = t.joints.map(row => Number(row.Jointxi)).filter(Number.isFinite);
+  const baseX = xs.length ? Math.max(...xs) + 12 : 0;
+  for (const [field, endpoint] of [['MJointID1', 1], ['MJointID2', 2]]) {
+    const jointId = Number(member[field]);
+    if (!Number.isFinite(jointId) || jointId <= 0) continue;
+    if (!t.joints.some(row => Number(row.JointID) === jointId)) {
+      t.joints.push({ JointID: jointId, Jointxi: baseX, Jointyi: 0, Jointzi: endpoint === 1 ? -20 : 10, JointAxID: axId, JointOvrlp: 0 });
+      warnings.push(`已补齐端点节点 / Endpoint created: ${jointId}`);
+    }
+  }
+
+  const propertyTable = rectangular ? 'prop_sets_rec' : 'prop_sets_cyl';
+  const otherPropertyTable = rectangular ? 'prop_sets_cyl' : 'prop_sets_rec';
+  const propertyKey = rectangular ? 'MPropSetID' : 'PropSetID';
+  const otherPropertyKey = rectangular ? 'PropSetID' : 'MPropSetID';
+  for (const field of ['MPropSetID1', 'MPropSetID2']) {
+    const propId = Number(member[field]);
+    if (!Number.isFinite(propId) || propId <= 0) continue;
+    if (!t[propertyTable].some(row => Number(row[propertyKey]) === propId)) {
+      const source = t[otherPropertyTable].find(row => Number(row[otherPropertyKey]) === propId);
+      t[propertyTable].push(convertHydroPropertyRow(source, rectangular, propId));
+      warnings.push(`已补齐${rectangular ? '矩形' : '圆柱'}截面 / ${rectangular ? 'Rectangular' : 'Cylindrical'} property created: ${propId}`);
+    }
+  }
+
+  const coefficientTable = rectangular ? 'member_coeffs_rec' : 'member_coeffs_cyl';
+  const otherCoefficientTable = rectangular ? 'member_coeffs_cyl' : 'member_coeffs_rec';
+  const coefficientSchema = hydroSchemas()[coefficientTable] || [];
+  const coefficientFields = coefficientSchema.length ? coefficientSchema : (HYDRO_VISIBLE_COLUMNS[coefficientTable] || []);
+  const simple = t[rectangular ? 'simple_rec' : 'simple_cyl'] || {};
+  if (Number(member.MCoefMod || 1) === 3 && Number.isFinite(memberId)) {
+    if (!t[coefficientTable].some(row => Number(row.MemberID) === memberId)) {
+      const source = t[otherCoefficientTable].find(row => Number(row.MemberID) === memberId);
+      t[coefficientTable].push(transferHydroMemberCoefficients(source, memberId, rectangular, coefficientFields, simple));
+      warnings.push(`已补齐${rectangular ? '矩形' : '圆柱'}独立系数 / Member coefficients created: ${memberId}`);
+    }
+    t[otherCoefficientTable] = t[otherCoefficientTable].filter(row => Number(row.MemberID) !== memberId);
+  } else if (Number.isFinite(memberId)) {
+    t.member_coeffs_cyl = t.member_coeffs_cyl.filter(row => Number(row.MemberID) !== memberId);
+    t.member_coeffs_rec = t.member_coeffs_rec.filter(row => Number(row.MemberID) !== memberId);
+  }
+
+  if (previousShape !== shape) {
+    const previousRectangular = previousShape === 2;
+    const oldTable = previousRectangular ? 'prop_sets_rec' : 'prop_sets_cyl';
+    const oldKey = previousRectangular ? 'MPropSetID' : 'PropSetID';
+    const oldIds = [Number(previous.MPropSetID1), Number(previous.MPropSetID2)].filter(Number.isFinite);
+    const stillUsed = new Set(t.members
+      .filter((row, index) => index !== memberIndex && (Number(row.MSecGeom || 1) === 2) === previousRectangular)
+      .flatMap(row => [Number(row.MPropSetID1), Number(row.MPropSetID2)]));
+    t[oldTable] = t[oldTable].filter(row => !oldIds.includes(Number(row[oldKey])) || stillUsed.has(Number(row[oldKey])));
+    warnings.push(`构件 ${memberId} 已切换为${rectangular ? '矩形' : '圆柱'}，截面与系数引用已迁移 / Geometry linkage migrated`);
+  }
+
+  t.joints.sort((a, b) => Number(a.JointID) - Number(b.JointID));
+  t.prop_sets_cyl.sort((a, b) => Number(a.PropSetID) - Number(b.PropSetID));
+  t.prop_sets_rec.sort((a, b) => Number(a.MPropSetID) - Number(b.MPropSetID));
+  t.member_coeffs_cyl.sort((a, b) => Number(a.MemberID) - Number(b.MemberID));
+  t.member_coeffs_rec.sort((a, b) => Number(a.MemberID) - Number(b.MemberID));
+  return warnings;
+}
+
 function repairHydroReferences(payload) {
   const t = payload?.tables;
   if (!t) return [];
@@ -3029,21 +3212,26 @@ function repairHydroReferences(payload) {
     if (!Array.isArray(t[name])) t[name] = [];
   }
 
-  const fixedJoints = [];
-  for (const joint of t.joints) {
-    if (Number(joint.JointOvrlp || 0) !== 0) {
-      joint.JointOvrlp = 0;
-      fixedJoints.push(joint.JointID);
+  const v4Target = ['auto_v4_runtime', 'v4', 'legacy_v4'].includes(payload.target_format || targetFormatForRuntime());
+  if (v4Target) {
+    const fixedJoints = [];
+    for (const joint of t.joints) {
+      if (Number(joint.JointOvrlp || 0) !== 0) {
+        joint.JointOvrlp = 0;
+        fixedJoints.push(joint.JointID);
+      }
     }
+    if (fixedJoints.length) warnings.push(`OpenFAST v4 requires JointOvrlp=0; fixed joints ${fixedJoints.join(', ')}`);
   }
-  if (fixedJoints.length) warnings.push(`OpenFAST v4 requires JointOvrlp=0; fixed joints ${fixedJoints.join(', ')}`);
 
   const propIds = new Set(t.prop_sets_cyl.map(row => Number(row.PropSetID)).filter(Number.isFinite));
   const propRecIds = new Set(t.prop_sets_rec.map(row => Number(row.MPropSetID)).filter(Number.isFinite));
   const coeffIds = new Set(t.member_coeffs_cyl.map(row => Number(row.MemberID)).filter(Number.isFinite));
   const coeffRecIds = new Set(t.member_coeffs_rec.map(row => Number(row.MemberID)).filter(Number.isFinite));
-  const coeffFields = hydroSchemas().member_coeffs_cyl || HYDRO_VISIBLE_COLUMNS.member_coeffs_cyl;
-  const coeffRecFields = hydroSchemas().member_coeffs_rec || [];
+  const coeffSchema = hydroSchemas().member_coeffs_cyl || [];
+  const coeffRecSchema = hydroSchemas().member_coeffs_rec || [];
+  const coeffFields = coeffSchema.length ? coeffSchema : HYDRO_VISIBLE_COLUMNS.member_coeffs_cyl;
+  const coeffRecFields = coeffRecSchema.length ? coeffRecSchema : HYDRO_VISIBLE_COLUMNS.member_coeffs_rec;
 
   for (const member of t.members) {
     const memberId = Number(member.MemberID);
@@ -3102,6 +3290,10 @@ function repairScenarioHydroReferences(scenario) {
 }
 
 function addDefaultMorisonMember(sectionGeometry = 1) {
+  if (Number(sectionGeometry) === 2 && !rectangularHydroSupported()) {
+    toast('当前模型/运行时使用 HydroDyn v4，不能写入矩形构件；请切换到原生 v5 模型与运行时 / Rectangle members require native HydroDyn v5');
+    return;
+  }
   const payload = ensureCaseHydroTables();
   const t = payload.tables;
   for (const name of ['axial', 'joints', 'prop_sets_cyl', 'prop_sets_rec', 'member_coeffs_cyl', 'member_coeffs_rec', 'members']) {
@@ -3141,8 +3333,10 @@ function addDefaultMorisonMember(sectionGeometry = 1) {
 
   const coeffTable = rectangular ? 'member_coeffs_rec' : 'member_coeffs_cyl';
   const simpleTable = rectangular ? 'simple_rec' : 'simple_cyl';
-  const coeffFields = hydroSchemas()[coeffTable] || HYDRO_VISIBLE_COLUMNS[coeffTable] || [];
+  const schemaFields = hydroSchemas()[coeffTable] || [];
+  const coeffFields = schemaFields.length ? schemaFields : (HYDRO_VISIBLE_COLUMNS[coeffTable] || []);
   t[coeffTable].push(createMemberCoeffRow(memberId, coeffFields, t[simpleTable] || {}));
+  state.selectedHydroMemberId = memberId;
   renderAll();
   toast(`已添加${rectangular ? '矩形' : '圆柱'}构件 ${memberId}：节点 ${joint1}–${joint2}、截面 ${propId}、独立系数已联动 / Member bundle added`);
 }
@@ -3182,8 +3376,9 @@ function hydrodynRuntimeErrors(payload = currentCase().hydrodyn_tables) {
     const rectangular = Number(member.MSecGeom || 1) === 2;
     const memberPropIds = rectangular ? propRecIds : propIds;
     const memberCoeffIds = rectangular ? coeffRecIds : coeffIds;
-    if (jointIds.size && !jointIds.has(Number(member.MJointID1))) errors.push(`Member ${member.MemberID} 缺少节点 MJointID1=${member.MJointID1}`);
-    if (jointIds.size && !jointIds.has(Number(member.MJointID2))) errors.push(`Member ${member.MemberID} 缺少节点 MJointID2=${member.MJointID2}`);
+    if (!jointIds.has(Number(member.MJointID1))) errors.push(`Member ${member.MemberID} 缺少节点 MJointID1=${member.MJointID1}`);
+    if (!jointIds.has(Number(member.MJointID2))) errors.push(`Member ${member.MemberID} 缺少节点 MJointID2=${member.MJointID2}`);
+    if (Number(member.MJointID1) === Number(member.MJointID2)) errors.push(`Member ${member.MemberID} 的两个端点不能引用同一节点。`);
     if (!memberPropIds.has(Number(member.MPropSetID1))) errors.push(`Member ${member.MemberID} 缺少截面属性 MPropSetID1=${member.MPropSetID1}`);
     if (!memberPropIds.has(Number(member.MPropSetID2))) errors.push(`Member ${member.MemberID} 缺少截面属性 MPropSetID2=${member.MPropSetID2}`);
     if (Number(member.MCoefMod || 1) === 3 && !memberCoeffIds.has(Number(member.MemberID))) {
@@ -3227,6 +3422,195 @@ function hydrodynReferenceWarnings(payload = hydroPayloadView()) {
   if (orphanProps.length) warnings.push(`未被 member 使用的截面属性: ${orphanProps.join(', ')}`);
   if (orphanRecProps.length) warnings.push(`未被 member 使用的矩形截面属性: ${orphanRecProps.join(', ')}`);
   return warnings;
+}
+
+function hydroMemberFieldOptions(member, field) {
+  const t = hydroTablesView();
+  const shape = Number(member?.MSecGeom || 1);
+  if (field === 'MSecGeom') {
+    return [
+      { value: '1', label: '圆柱 / Cylinder (1)' },
+      { value: '2', label: '矩形 / Rectangle (2)', disabled: !rectangularHydroSupported() }
+    ];
+  }
+  if (field === 'MCoefMod') {
+    return [
+      { value: '1', label: '通用系数 / Simple (1)' },
+      { value: '2', label: '深度系数 / Depth-based (2)' },
+      { value: '3', label: '构件独立 / Member-specific (3)' }
+    ];
+  }
+  if (field === 'MHstLMod') {
+    return [
+      { value: '0', label: '关闭 / Disabled (0)' },
+      { value: '1', label: '启用 / Enabled (1)' }
+    ];
+  }
+  if (field === 'PropPot') {
+    return [
+      { value: 'false', label: '否 / False' },
+      { value: 'true', label: '是 / True' }
+    ];
+  }
+  if (field === 'MJointID1' || field === 'MJointID2') {
+    return (t.joints || []).map(row => ({ value: String(row.JointID), label: `Joint ${row.JointID}` }));
+  }
+  if (field === 'MPropSetID1' || field === 'MPropSetID2') {
+    const rows = shape === 2 ? (t.prop_sets_rec || []) : (t.prop_sets_cyl || []);
+    const key = shape === 2 ? 'MPropSetID' : 'PropSetID';
+    return rows.map(row => ({ value: String(row[key]), label: `${shape === 2 ? 'Rectangle' : 'Cylinder'} ${row[key]}` }));
+  }
+  return null;
+}
+
+function createHydroCellControl(tableName, index, field, row, objectTable = false) {
+  const options = tableName === 'members' ? hydroMemberFieldOptions(row, field) : null;
+  let control;
+  if (options?.length) {
+    control = document.createElement('select');
+    const current = String(row[field] ?? '');
+    if (!options.some(option => option.value === current)) {
+      options.unshift({ value: current, label: `${current} · 当前引用 / Current reference` });
+    }
+    for (const item of options) {
+      const option = document.createElement('option');
+      option.value = item.value;
+      option.textContent = item.label;
+      option.disabled = Boolean(item.disabled);
+      option.selected = item.value === current;
+      control.appendChild(option);
+    }
+  } else {
+    control = document.createElement('input');
+    control.value = row[field] ?? '';
+  }
+  control.title = `${HYDRO_TABLE_TITLES[tableName] || tableName}.${field}`;
+  control.setAttribute('aria-label', HYDRO_FIELD_LABELS[field] || field);
+  control.onchange = () => setHydroCell(tableName, index, field, control.value, objectTable);
+  return control;
+}
+
+function appendHydroLinkedCard(container, { title, subtitle, tableName, rowIndex, fields, wide = false }) {
+  const rows = hydroTablesView()[tableName] || [];
+  const row = rows[rowIndex];
+  const card = document.createElement('section');
+  card.className = `hydro-linked-card${wide ? ' wide' : ''}`;
+  const head = document.createElement('div');
+  head.className = 'hydro-linked-card-head';
+  head.innerHTML = `<strong>${escapeHtml(title)}</strong>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}`;
+  card.appendChild(head);
+  if (!row) {
+    const missing = document.createElement('p');
+    missing.className = 'inline-error compact';
+    missing.textContent = '关联数据缺失；修改上方引用后会自动补齐 / Linked data is missing and will be created when the reference changes.';
+    card.appendChild(missing);
+    container.appendChild(card);
+    return;
+  }
+  const grid = document.createElement('div');
+  grid.className = 'hydro-linked-fields';
+  for (const field of fields) {
+    if (!(field in row) && tableName !== 'members') continue;
+    const label = document.createElement('label');
+    const caption = document.createElement('span');
+    caption.textContent = HYDRO_FIELD_LABELS[field] || field;
+    label.append(caption, createHydroCellControl(tableName, rowIndex, field, row));
+    grid.appendChild(label);
+  }
+  card.appendChild(grid);
+  container.appendChild(card);
+}
+
+function renderHydroLinkedBundle() {
+  const select = $('hydroMemberSelect');
+  const wrap = $('hydroLinkedBundle');
+  const panel = $('hydroLinkedPanel');
+  if (!select || !wrap || !panel) return;
+  const t = hydroTablesView();
+  const members = t.members || [];
+  select.innerHTML = '';
+  wrap.innerHTML = '';
+  if (!members.length) {
+    select.disabled = true;
+    panel.dataset.empty = 'true';
+    wrap.innerHTML = '<div class="empty-state compact">先添加一个构件；端点、截面和系数会在这里集中联动编辑。<br>Add a member to edit its endpoints, property and coefficients together.</div>';
+    return;
+  }
+  panel.dataset.empty = 'false';
+  const selectedExists = members.some(row => Number(row.MemberID) === Number(state.selectedHydroMemberId));
+  if (!selectedExists) state.selectedHydroMemberId = Number(members[0].MemberID);
+  const memberIndex = members.findIndex(row => Number(row.MemberID) === Number(state.selectedHydroMemberId));
+  const member = members[memberIndex];
+  select.disabled = false;
+  for (const row of members) {
+    const option = document.createElement('option');
+    option.value = String(row.MemberID);
+    option.textContent = `Member ${row.MemberID} · ${Number(row.MSecGeom || 1) === 2 ? '矩形 / Rectangle' : '圆柱 / Cylinder'}`;
+    option.selected = Number(row.MemberID) === Number(state.selectedHydroMemberId);
+    select.appendChild(option);
+  }
+  select.onchange = () => {
+    state.selectedHydroMemberId = Number(select.value);
+    renderHydroTables();
+  };
+
+  const summary = document.createElement('div');
+  summary.className = 'hydro-link-summary';
+  summary.innerHTML = `<span>Member <strong>${escapeHtml(member.MemberID)}</strong></span><span>Joints <strong>${escapeHtml(member.MJointID1)} → ${escapeHtml(member.MJointID2)}</strong></span><span>Properties <strong>${escapeHtml(member.MPropSetID1)} → ${escapeHtml(member.MPropSetID2)}</strong></span><span>${Number(member.MSecGeom || 1) === 2 ? '矩形 / Rectangle' : '圆柱 / Cylinder'}</span>`;
+  wrap.appendChild(summary);
+  if (Number(member.MSecGeom || 1) === 2 && !rectangularHydroSupported()) {
+    const warning = document.createElement('div');
+    warning.className = 'inline-readiness';
+    warning.innerHTML = '<div class="inline-readiness-item error"><strong>当前 v4 上下文不能写出矩形构件</strong><span>Switch to a native HydroDyn v5 model and runtime, or change this member back to Cylinder (1).</span></div>';
+    wrap.appendChild(warning);
+  }
+
+  const cards = document.createElement('div');
+  cards.className = 'hydro-linked-grid';
+  appendHydroLinkedCard(cards, {
+    title: '构件引用 / Member references',
+    subtitle: '形状、端点、截面与系数模式',
+    tableName: 'members', rowIndex: memberIndex,
+    fields: ['MSecGeom', 'MJointID1', 'MJointID2', 'MPropSetID1', 'MPropSetID2', 'MSpinOrient', 'MDivSize', 'MCoefMod', 'MHstLMod', 'PropPot'],
+    wide: true
+  });
+  for (const [field, endpoint] of [['MJointID1', '起点 / Start'], ['MJointID2', '终点 / End']]) {
+    const id = Number(member[field]);
+    const rowIndex = (t.joints || []).findIndex(row => Number(row.JointID) === id);
+    appendHydroLinkedCard(cards, {
+      title: `${endpoint} · Joint ${id}`,
+      subtitle: '节点坐标 / Joint coordinates',
+      tableName: 'joints', rowIndex,
+      fields: ['Jointxi', 'Jointyi', 'Jointzi', 'JointAxID', 'JointOvrlp']
+    });
+  }
+  const rectangular = Number(member.MSecGeom || 1) === 2;
+  const propertyTable = rectangular ? 'prop_sets_rec' : 'prop_sets_cyl';
+  const propertyKey = rectangular ? 'MPropSetID' : 'PropSetID';
+  const propertyFields = rectangular ? ['PropA', 'PropB', 'PropThck'] : ['PropD', 'PropThck'];
+  const seenProperties = new Set();
+  for (const [field, endpoint] of [['MPropSetID1', '起点 / Start'], ['MPropSetID2', '终点 / End']]) {
+    const id = Number(member[field]);
+    if (seenProperties.has(id)) continue;
+    seenProperties.add(id);
+    const rowIndex = (t[propertyTable] || []).findIndex(row => Number(row[propertyKey]) === id);
+    appendHydroLinkedCard(cards, {
+      title: `${endpoint} · Property ${id}`,
+      subtitle: rectangular ? '矩形截面 / Rectangular section' : '圆柱截面 / Cylindrical section',
+      tableName: propertyTable, rowIndex, fields: propertyFields
+    });
+  }
+  const coefficientTable = rectangular ? 'member_coeffs_rec' : 'member_coeffs_cyl';
+  const coefficientIndex = (t[coefficientTable] || []).findIndex(row => Number(row.MemberID) === Number(member.MemberID));
+  const coefficientFields = hydroColumns(coefficientTable).filter(field => field !== 'MemberID');
+  if (Number(member.MCoefMod || 1) === 3) {
+    appendHydroLinkedCard(cards, {
+      title: `Member ${member.MemberID} · 独立系数 / Member-specific coefficients`,
+      subtitle: rectangular ? '矩形 A/B 方向与轴向系数' : '圆柱横向与轴向系数',
+      tableName: coefficientTable, rowIndex: coefficientIndex, fields: coefficientFields, wide: true
+    });
+  }
+  wrap.appendChild(cards);
 }
 
 function renderHydroTable(containerId, tableName, { objectTable = false } = {}) {
@@ -3299,18 +3683,31 @@ function renderHydroTable(containerId, tableName, { objectTable = false } = {}) 
   } else {
     rows.forEach((row, index) => {
       const tr = document.createElement('tr');
+      if (tableName === 'members' && Number(row.MemberID) === Number(state.selectedHydroMemberId)) {
+        tr.classList.add('is-linked-selection');
+      }
       columns.forEach(col => {
         const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.value = row[col] ?? '';
-        input.title = `${HYDRO_TABLE_TITLES[tableName] || tableName}.${col}`;
-        input.onchange = () => setHydroCell(tableName, index, col, input.value, objectTable);
-        td.appendChild(input);
+        td.appendChild(createHydroCellControl(tableName, index, col, row, objectTable));
         tr.appendChild(td);
       });
       if (!objectTable) {
         const td = document.createElement('td');
+        td.className = 'hydro-row-actions';
+        if (tableName === 'members') {
+          const linked = document.createElement('button');
+          linked.type = 'button';
+          linked.className = 'mini-button';
+          linked.textContent = Number(row.MemberID) === Number(state.selectedHydroMemberId) ? '联动中 / Linked' : '联动编辑 / Edit linked';
+          linked.onclick = () => {
+            state.selectedHydroMemberId = Number(row.MemberID);
+            renderHydroTables();
+            $('hydroLinkedPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          };
+          td.appendChild(linked);
+        }
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.className = 'remove';
         btn.textContent = '删除 / Delete';
         btn.onclick = () => deleteHydroRow(tableName, index);
@@ -3329,6 +3726,12 @@ function renderHydroTables() {
   if (!$('hydroStatus')) return;
   const payload = hydroPayloadView();
   const t = payload.tables || {};
+  const rectangleSupported = rectangularHydroSupported(payload);
+  const hasRectangularData = (t.members || []).some(row => Number(row.MSecGeom || 1) === 2)
+    || ['prop_sets_rec', 'simple_rec', 'depth_rec', 'member_coeffs_rec'].some(name => {
+      const value = t[name];
+      return Array.isArray(value) ? value.length > 0 : Boolean(value && Object.keys(value).length);
+    });
   const custom = Boolean(currentCase().hydrodyn_tables?.tables);
   const baseWarnings = state.meta?.hydroTables?.warnings || [];
   const runtimeErrors = hydrodynRuntimeErrors(payload);
@@ -3345,7 +3748,31 @@ function renderHydroTables() {
   const messages = [...baseWarnings, ...referenceWarnings, ...runtimeErrors];
   $('hydroStatus').innerHTML = `${custom ? '当前 case 已启用表格覆盖。' : '当前显示模板表格，编辑后才写入当前 case。'}<br>${counts.join(' | ')}${messages.length ? `<br><span class="danger-text">${messages.map(escapeHtml).join('<br>')}</span>` : ''}`;
 
+  const rectangleButton = $('addMorisonRecBtn');
+  if (rectangleButton) {
+    rectangleButton.disabled = !rectangleSupported;
+    rectangleButton.textContent = rectangleSupported
+      ? '添加矩形构件（自动联动） / Add rectangle'
+      : '矩形构件需要 v5 模板 / Rectangle requires v5';
+    rectangleButton.title = rectangleSupported
+      ? '创建构件、两个端点、矩形截面与独立系数'
+      : '当前 HydroDyn 模板或运行时为 v4；矩形表只能由原生 v5 上下文写出。';
+  }
+  const rectangleSupport = $('hydroRectangleSupport');
+  if (rectangleSupport) {
+    rectangleSupport.dataset.status = rectangleSupported ? 'ready' : hasRectangularData ? 'blocked' : 'unavailable';
+    rectangleSupport.innerHTML = rectangleSupported
+      ? '<strong>矩形构件已可用 / Rectangle members ready</strong><span>当前模型与运行时均使用 HydroDyn v5；新增后会联动端点、矩形截面和 A/B 方向系数。</span>'
+      : hasRectangularData
+        ? '<strong>存在不能写出的矩形数据 / Rectangle data cannot be written</strong><span>当前上下文不是原生 HydroDyn v5。请切换模型与运行时，或把相关构件改回圆柱。</span>'
+        : '<strong>当前为 HydroDyn v4 / HydroDyn v4 context</strong><span>矩形构件入口已禁用；切换到原生 v5 模型与运行时后自动开放。</span>';
+  }
+  document.querySelectorAll('[data-hydro-rectangle]').forEach(panel => {
+    panel.hidden = !rectangleSupported && !hasRectangularData;
+  });
+
   renderHydroTable('hydroMembers', 'members');
+  renderHydroLinkedBundle();
   renderHydroTable('hydroJoints', 'joints');
   renderHydroTable('hydroProps', 'prop_sets_cyl');
   renderHydroTable('hydroMemberCoeffs', 'member_coeffs_cyl');
@@ -4073,7 +4500,7 @@ function bindEvents() {
   $('addMatrixBtn').onclick = () => { delete currentCase().matrix_edits; renderAll(); toast('已清空矩阵修改'); };
   $('addMorisonBtn').onclick = () => addDefaultMorisonMember(1);
   $('addMorisonRecBtn').onclick = () => addDefaultMorisonMember(2);
-  $('resetHydroTablesBtn').onclick = () => { delete currentCase().hydrodyn_tables; renderAll(); toast('已恢复模板 HydroDyn 表格'); };
+  $('resetHydroTablesBtn').onclick = () => { delete currentCase().hydrodyn_tables; state.selectedHydroMemberId = null; renderAll(); toast('已恢复模板 HydroDyn 表格'); };
   $('dlcGenerateBtn').onclick = () => { try { generateDlcCases(); } catch (err) { toast(err.message); } };
   $('focalWaveGenerateBtn').onclick = () => { try { generateFocalWaveCases(); } catch (err) { toast(err.message); } };
   ['focalWaveGroup', 'focalWavePlot'].forEach(id => {

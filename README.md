@@ -64,12 +64,12 @@ $env:FOCAL_C4_MODEL_TEMPLATE = "D:\path\to\FOCAL_OpenFast_C4-main"
 http://127.0.0.1:8765
 ```
 
-页面顶部可以选择模型模板和 OpenFAST runtime。当前配置包含：
+页面顶部可以选择模型模板和 OpenFAST runtime。v5 是 IEA-15-240-RWT UMaineSemi 的主开发与运行基线；v4 仅保留给现有 FOCAL C4 兼容工作流。当前配置包含：
 
 - `FOCAL C4 semi-submersible` + `OpenFAST v4.0.0 bundled`
-- `IEA-15-240-RWT UMaineSemi` + `OpenFAST 2026 dev build`
+- `IEA-15-240-RWT UMaineSemi` + `OpenFAST v5.0.0 official`
 
-模型和 runtime 来自 [config/model_profiles.json](config/model_profiles.json)。换电脑或换安装路径时，可以复制一份本地覆盖配置到 `config/local_model_profiles.json`；该文件被 `.gitignore` 忽略，不会上传。
+模型和 runtime 来自 [config/model_profiles.json](config/model_profiles.json)。共享配置用 `${WORKSPACE_ROOT}` 表示 `openfast-gui` 的父目录；换电脑或换安装路径时，可在 GUI 的“模型与运行时路径”面板保存字段级本地覆盖到 `config/local_model_profiles.json`。该文件被 `.gitignore` 忽略，不会上传，也不会复制、移动或修改原始模型数据。
 
 如果 8765 端口被占用：
 
@@ -108,10 +108,11 @@ python .\user_tools\run_scenario.py --list-scenarios
 命令行指定 IEA-15-240 模型并只生成输入：
 
 ```powershell
+$Workspace = (Resolve-Path ..).Path
 .\scripts\06_run_scenario_file.ps1 `
   -Scenario .\scenarios\iea_15_240_steady_wind.json `
-  -Model "D:\OpenFast\FOCAL_C4_clean_workspace\02_starting_model\best_reproducible_model\OpenFAST_input_files" `
-  -OpenFastExe "D:\OpenFast\FOCAL_C4_clean_workspace\02_starting_model\best_reproducible_model\OpenFAST_input_files\OpenFAST_Release.exe" `
+  -Model "$Workspace\01_物理校准工作流\02_starting_model\best_reproducible_model\OpenFAST_input_files" `
+  -OpenFastExe "$Workspace\05_用户工作区\research_slow_drift_15mw\toolchain\openfast-v5.0.0\OpenFAST.exe" `
   -RuntimeFormat v5 `
   -Compatibility none `
   -Fst IEA-15-240-RWT-UMaineSemi.fst `

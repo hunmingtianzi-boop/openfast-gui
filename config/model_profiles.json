@@ -4,6 +4,7 @@
       "id": "focal_c4",
       "name": "FOCAL C4 semi-submersible",
       "description": "FOCAL Campaign 4 model, current calibrated v4 workflow.",
+      "default": false,
       "path": "${ROOT}/FOCAL_OpenFast_C4-main/FOCAL_OpenFast_C4-main",
       "fst": "FOCAL_C4.fst",
       "hydroFile": "FOCAL_C4_HydroDyn.dat",
@@ -13,6 +14,7 @@
       "defaultMooring": 3,
       "compatibility": "focal_c4_v4",
       "preferredRuntime": "openfast_v4",
+      "supportedRuntimeFormats": ["v4"],
       "inputFiles": [
         "FOCAL_C4.fst",
         "FOCAL_C4_ElastoDyn.dat",
@@ -29,8 +31,9 @@
     {
       "id": "iea_15_240_umaine",
       "name": "IEA-15-240-RWT UMaineSemi",
-      "description": "IEA 15 MW offshore reference turbine on UMaine VolturnUS-S semi-submersible platform.",
-      "path": "D:/OpenFast/FOCAL_C4_clean_workspace/02_starting_model/best_reproducible_model/OpenFAST_input_files",
+      "description": "IEA 15 MW reference turbine and UMaineSemi model converted for the native OpenFAST v5 input format.",
+      "default": true,
+      "path": "${WORKSPACE_ROOT}/01_物理校准工作流/02_starting_model/best_reproducible_model/OpenFAST_input_files",
       "fst": "IEA-15-240-RWT-UMaineSemi.fst",
       "hydroFile": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
       "inflowFile": "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat",
@@ -39,6 +42,8 @@
       "defaultMooring": 0,
       "compatibility": "none",
       "preferredRuntime": "openfast_2026_dev",
+      "supportedRuntimeFormats": ["v5"],
+      "referenceModelVersion": "IEA-15-240-RWT v1.1.12",
       "inputFiles": [
         "IEA-15-240-RWT-UMaineSemi.fst",
         "IEA-15-240-RWT-UMaineSemi_ElastoDyn.dat",
@@ -66,10 +71,10 @@
     },
     {
       "id": "openfast_2026_dev",
-      "name": "OpenFAST 2026 dev build",
-      "path": "D:/OpenFast/FOCAL_C4_clean_workspace/02_starting_model/best_reproducible_model/OpenFAST_input_files/OpenFAST_Release.exe",
+      "name": "OpenFAST v5.0.0 official",
+      "path": "${WORKSPACE_ROOT}/05_用户工作区/research_slow_drift_15mw/toolchain/openfast-v5.0.0/OpenFAST.exe",
       "runtimeFormat": "v5",
-      "description": "Local OpenFAST_Release.exe bundled with the IEA-15-240 reproducible model. The executable reports OpenFAST-Unversioned from commit 2895884."
+      "description": "Official OpenFAST v5.0.0 runtime used by the IEA-15-240 UMaineSemi workflow."
     }
   ]
 }

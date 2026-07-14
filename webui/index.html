@@ -485,12 +485,26 @@
             </div>
           </div>
           <div id="hydroReadiness" class="inline-readiness" hidden></div>
+          <div id="hydroRectangleSupport" class="hydro-rectangle-support" aria-live="polite"></div>
           <div id="hydroStatus" class="hint"></div>
         </section>
         <div class="hydro-grid">
           <section class="panel">
             <div class="panel-head"><h2>Morison 构件 / Members</h2></div>
             <div id="hydroMembers"></div>
+          </section>
+          <section id="hydroLinkedPanel" class="panel hydro-linked-panel">
+            <div class="panel-head hydro-linked-head">
+              <div>
+                <p class="section-kicker">当前构件联动 / Current member linkage</p>
+                <h2>端点、截面与系数 / Endpoints, property and coefficients</h2>
+              </div>
+              <label>
+                <span class="sr-only">选择 Morison 构件 / Select Morison member</span>
+                <select id="hydroMemberSelect" aria-label="选择 Morison 构件 / Select Morison member"></select>
+              </label>
+            </div>
+            <div id="hydroLinkedBundle"></div>
           </section>
           <section class="panel">
             <div class="panel-head"><h2>端点节点 / Endpoint joints</h2></div>
@@ -516,19 +530,19 @@
             <div class="panel-head"><h2>圆柱深度系数 / Cylindrical depth coefficients</h2></div>
             <div id="hydroDepthCyl"></div>
           </section>
-          <section class="panel">
+          <section class="panel" data-hydro-rectangle>
             <div class="panel-head"><h2>矩形截面属性 / Rectangular properties (v5)</h2></div>
             <div id="hydroPropsRec"></div>
           </section>
-          <section class="panel">
+          <section class="panel" data-hydro-rectangle>
             <div class="panel-head"><h2>矩形通用系数 / Rectangular simple coefficients (v5)</h2></div>
             <div id="hydroSimpleRec"></div>
           </section>
-          <section class="panel">
+          <section class="panel" data-hydro-rectangle>
             <div class="panel-head"><h2>矩形深度系数 / Rectangular depth coefficients (v5)</h2></div>
             <div id="hydroDepthRec"></div>
           </section>
-          <section class="panel">
+          <section class="panel" data-hydro-rectangle>
             <div class="panel-head"><h2>矩形构件独立系数 / Rectangular member coefficients (v5)</h2></div>
             <div id="hydroMemberCoeffsRec"></div>
           </section>

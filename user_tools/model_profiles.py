@@ -13,6 +13,7 @@ from openfast_input import discover_model_dependencies, structure_file_ids
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = ROOT.parent
 CONFIG_PATH = ROOT / "config" / "model_profiles.json"
 LOCAL_CONFIG_PATH = ROOT / "config" / "local_model_profiles.json"
 
@@ -22,7 +23,8 @@ def _expand_path(value: str | os.PathLike | None) -> pathlib.Path | None:
         return None
     text = str(value)
     text = text.replace("${ROOT}", str(ROOT))
-    text = text.replace("${OPENFAST_ROOT}", str(ROOT))
+    text = text.replace("${WORKSPACE_ROOT}", str(WORKSPACE_ROOT))
+    text = text.replace("${OPENFAST_ROOT}", str(WORKSPACE_ROOT))
     text = os.path.expandvars(text)
     return pathlib.Path(text)
 
@@ -100,6 +102,9 @@ def select_model(model_id: str | None = None) -> dict[str, Any]:
         for row in rows:
             if row.get("id") == model_id:
                 return row
+    for row in rows:
+        if row.get("default") and row.get("exists") and row.get("fstExists"):
+            return row
     for row in rows:
         if row.get("exists") and row.get("fstExists"):
             return row

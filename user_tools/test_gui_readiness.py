@@ -44,6 +44,30 @@ class GuiReadinessTests(unittest.TestCase):
         issues = ui_server.readiness_issues(model, runtime, structure={"summary": {}}, require_runtime=False)
         self.assertNotIn("runtime_missing", {issue["code"] for issue in issues})
 
+    def test_v5_model_rejects_v4_runtime_and_stale_scenario_runtime(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            (root / "main.fst").write_text("1 CompHydro\n", encoding="utf-8")
+            (root / "HydroDyn.dat").write_text("0 NPropSetsCyl\n", encoding="utf-8")
+            model = {
+                "id": "v5_model", "path": str(root), "exists": True,
+                "fst": "main.fst", "fstExists": True,
+                "hydroFile": "HydroDyn.dat", "hydroPath": str(root / "HydroDyn.dat"), "hydroExists": True,
+                "supportedRuntimeFormats": ["v5"],
+            }
+            runtime = {
+                "id": "v4_runtime", "path": sys.executable, "exists": True,
+                "runtimeFormat": "v4", "version": "OpenFAST-v4.0.0",
+            }
+            scenario = {"model_id": "v5_model", "runtime_id": "v5_runtime", "cases": []}
+            issues = ui_server.readiness_issues(
+                model, runtime, scenario=scenario,
+                structure={"nodes": [{"id": "main.fst", "exists": True}], "summary": {"missing": 0}},
+            )
+            codes = {issue["code"] for issue in issues if issue["severity"] == "error"}
+            self.assertIn("runtime_format_incompatible", codes)
+            self.assertIn("scenario_runtime_mismatch", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

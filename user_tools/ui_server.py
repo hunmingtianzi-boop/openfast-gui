@@ -31,7 +31,7 @@ for import_path in [WORK_C4, USER_TOOLS]:
         sys.path.insert(0, str(import_path))
 
 from driver_c4 import _ensure_hydrodyn_v4  # noqa: E402
-from hydrodyn_tables import parse_hydrodyn_tables  # noqa: E402
+from hydrodyn_tables import detect_hydrodyn_table_format, parse_hydrodyn_tables  # noqa: E402
 from linearization_workspace import analyze_linearization, discover_linearizations  # noqa: E402
 from module_plugins import capability_matrix, plugin_definitions  # noqa: E402
 from openfast_input import (  # noqa: E402
@@ -145,8 +145,8 @@ INTERFACE_MODES = [
 
 DOC_LINKS = [
     {"label": "OpenFAST 总览", "url": "https://openfast.readthedocs.io/en/main/"},
-    {"label": "运行 OpenFAST", "url": "https://openfast.readthedocs.io/en/v4.0.5/source/working.html"},
-    {"label": "v4 API 变化", "url": "https://openfast.readthedocs.io/en/main/source/user/api_change.html"},
+    {"label": "运行 OpenFAST", "url": "https://openfast.readthedocs.io/en/main/source/working.html"},
+    {"label": "OpenFAST API 变化", "url": "https://openfast.readthedocs.io/en/main/source/user/api_change.html"},
     {"label": "ElastoDyn 输入", "url": "https://openfast.readthedocs.io/en/dev/source/user/elastodyn/input.html"},
     {"label": "InflowWind 输入", "url": "https://openfast.readthedocs.io/en/dev/source/user/inflowwind/input.html"},
     {"label": "SeaState 输入", "url": "https://openfast.readthedocs.io/en/dev/source/user/seastate/input_files.html"},
@@ -259,7 +259,26 @@ def active_context(qs: dict[str, list[str]] | None = None, options: dict | None 
 
 
 def readiness_issue(code: str, severity: str, scopes: list[str], **details) -> dict:
-    return {"code": code, "severity": severity, "scopes": scopes, **{key: value for key, value in details.items() if value not in {None, ""}}}
+    return {
+        "code": code,
+        "severity": severity,
+        "scopes": scopes,
+        **{key: value for key, value in details.items() if value is not None and value != ""},
+    }
+
+
+def runtime_major(runtime: dict) -> int | None:
+    """Return the reported OpenFAST major version when the executable identifies it."""
+    match = re.search(r"OpenFAST-v(\d+)", str(runtime.get("version") or ""), flags=re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def hydrodyn_format_for_model(model: dict) -> str:
+    path = pathlib.Path(str(model.get("hydroPath") or ""))
+    if not path.is_file():
+        return "missing"
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return detect_hydrodyn_table_format(lines)
 
 
 def case_file_targets(case: dict) -> set[str]:
@@ -306,6 +325,21 @@ def readiness_issues(
             path=runtime.get("path"), runtimeId=runtime.get("id"),
         ))
 
+    runtime_format = str(runtime.get("runtimeFormat") or "").lower()
+    supported_formats = [str(value).lower() for value in (model.get("supportedRuntimeFormats") or [])]
+    if runtime.get("exists") and supported_formats and runtime_format not in supported_formats:
+        issues.append(readiness_issue(
+            "runtime_format_incompatible", "error", ["global", "context", "compose", "hydro", "tools"],
+            runtimeFormat=runtime_format, supportedRuntimeFormats=supported_formats,
+            modelId=model.get("id"), runtimeId=runtime.get("id"),
+        ))
+    reported_major = runtime_major(runtime)
+    if runtime.get("exists") and runtime_format == "v5" and reported_major is not None and reported_major < 5:
+        issues.append(readiness_issue(
+            "runtime_version_incompatible", "error", ["global", "context", "compose", "hydro", "tools"],
+            version=runtime.get("version"), runtimeId=runtime.get("id"),
+        ))
+
     structure = structure or dependency_structure_for_model(model)
     summary = structure.get("summary") or {}
     if model.get("exists") and model.get("fstExists") and summary.get("missing"):
@@ -313,10 +347,16 @@ def readiness_issues(
             "dependency_missing", "warning", ["global", "context", "model"],
             count=int(summary.get("missing") or 0),
         ))
+    hydro_format = hydrodyn_format_for_model(model) if model.get("hydroExists") else "missing"
     if model.get("hydroFile") and not model.get("hydroExists"):
         issues.append(readiness_issue(
             "hydrodyn_input_missing", "warning", ["global", "compose", "hydro", "model"],
             path=model.get("hydroPath"), file=model.get("hydroFile"),
+        ))
+    elif model.get("hydroFile") and runtime_format == "v5" and hydro_format != "v5":
+        issues.append(readiness_issue(
+            "hydrodyn_format_incompatible", "warning", ["global", "context", "hydro"],
+            path=model.get("hydroPath"), hydroFormat=hydro_format, runtimeFormat=runtime_format,
         ))
 
     if not isinstance(scenario, dict):
@@ -327,6 +367,12 @@ def readiness_issues(
         issues.append(readiness_issue(
             "scenario_model_mismatch", "error", ["global", "context", "compose", "advanced"],
             scenarioModelId=scenario_model, modelId=model.get("id"),
+        ))
+    scenario_runtime = scenario.get("runtime_id")
+    if scenario_runtime and scenario_runtime != runtime.get("id"):
+        issues.append(readiness_issue(
+            "scenario_runtime_mismatch", "error", ["global", "context", "compose", "advanced"],
+            scenarioRuntimeId=scenario_runtime, runtimeId=runtime.get("id"),
         ))
 
     if not (model.get("exists") and model.get("fstExists")):
@@ -355,6 +401,11 @@ def readiness_issues(
         issues.append(readiness_issue(
             "hydrodyn_required_missing", "error", ["global", "compose", "hydro"],
             path=model.get("hydroPath"), file=model.get("hydroFile"),
+        ))
+    elif hydro_required and runtime_format == "v5" and hydro_format != "v5":
+        issues.append(readiness_issue(
+            "hydrodyn_format_required", "error", ["global", "compose", "hydro"],
+            path=model.get("hydroPath"), hydroFormat=hydro_format, runtimeFormat=runtime_format,
         ))
     for target in sorted(unknown_targets):
         issues.append(readiness_issue(
@@ -549,6 +600,7 @@ def meta_payload(model: dict, runtime: dict) -> dict:
         "runScenario": str(RUN_SCENARIO),
         "modelStructure": structure,
         "dependencySummary": structure.get("summary") or {},
+        "hydroFormat": hydrodyn_format_for_model(model),
         "readiness": readiness_issues(model, runtime, structure=structure),
         "modulePlugins": plugin_definitions(),
         "moduleCatalog": module_catalog,
@@ -620,6 +672,12 @@ def run_job(job_id: str, scenario_file: pathlib.Path, options: dict) -> None:
         model.get("compatibility") or "none",
         "--fst",
         model.get("fst") or "FOCAL_C4.fst",
+        "--hydro-file",
+        model.get("hydroFile") or "HydroDyn.dat",
+        "--inflow-file",
+        model.get("inflowFile") or "InflowWind.dat",
+        "--sea-state-file",
+        model.get("seaStateFile") or "SeaState.dat",
         "--workers",
         str(workers),
     ]

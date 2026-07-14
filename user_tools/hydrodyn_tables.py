@@ -517,11 +517,50 @@ def _default_member_coeff(member_id: int, fields: list[str] | None = None) -> di
     for field in fields:
         if field == "MemberID":
             row[field] = member_id
-        elif field.endswith(("Cd1", "Cd2", "CdMG1", "CdMG2", "Ca1", "Ca2", "CaMG1", "CaMG2", "Cp1", "Cp2", "CpMG1", "CpMG2")):
+        elif field.startswith("Member"):
             row[field] = 1
         else:
             row[field] = _default_for_field(field)
     return row
+
+
+def _converted_property(source: dict[str, Any] | None, rectangular: bool, prop_id: int) -> dict[str, Any]:
+    source = source or {}
+    thickness = _as_float(source.get("PropThck"), 0.06)
+    if rectangular:
+        fallback = _as_float(source.get("PropD"), 6.0)
+        return {
+            "MPropSetID": prop_id,
+            "PropA": _as_float(source.get("PropA"), fallback),
+            "PropB": _as_float(source.get("PropB"), fallback),
+            "PropThck": thickness,
+        }
+    return {
+        "PropSetID": prop_id,
+        "PropD": _as_float(source.get("PropD"), max(_as_float(source.get("PropA")), _as_float(source.get("PropB")), 6.0)),
+        "PropThck": thickness,
+    }
+
+
+def _converted_member_coeff(source: dict[str, Any] | None, member_id: int, rectangular: bool) -> dict[str, Any]:
+    fields = DEFAULT_SCHEMAS["member_coeffs_rec" if rectangular else "member_coeffs_cyl"]
+    target = _default_member_coeff(member_id, fields)
+    source = source or {}
+    for field in fields:
+        if field != "MemberID" and field in source:
+            target[field] = source[field]
+    for suffix in ("1", "2", "MG1", "MG2"):
+        for family in ("Cd", "Ca"):
+            if rectangular:
+                value = source.get(f"Member{family}{suffix}")
+                if value is not None:
+                    target[f"Member{family}A{suffix}"] = value
+                    target[f"Member{family}B{suffix}"] = value
+            else:
+                value = source.get(f"Member{family}A{suffix}", source.get(f"Member{family}B{suffix}"))
+                if value is not None:
+                    target[f"Member{family}{suffix}"] = value
+    return target
 
 
 def repair_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") -> tuple[dict[str, Any], list[str]]:
@@ -530,7 +569,10 @@ def repair_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") ->
     repaired.update(deepcopy(tables or {}))
     warnings: list[str] = []
 
-    for name in ["joints", "prop_sets_cyl", "member_coeffs_cyl", "members"]:
+    for name in [
+        "axial", "joints", "prop_sets_cyl", "prop_sets_rec", "depth_cyl", "depth_rec",
+        "member_coeffs_cyl", "member_coeffs_rec", "members",
+    ]:
         if not isinstance(repaired.get(name), list):
             repaired[name] = []
 
@@ -546,7 +588,9 @@ def repair_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") ->
             )
 
     prop_ids = _ids(repaired["prop_sets_cyl"], "PropSetID")
+    prop_rec_ids = _ids(repaired["prop_sets_rec"], "MPropSetID")
     coeff_ids = _ids(repaired["member_coeffs_cyl"], "MemberID")
+    coeff_rec_ids = _ids(repaired["member_coeffs_rec"], "MemberID")
 
     for member in repaired["members"]:
         member_id = _as_int(member.get("MemberID"))
@@ -555,22 +599,43 @@ def repair_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") ->
         member.setdefault("MHstLMod", 0)
         member.setdefault("PropPot", False)
         shape = _as_int(member.get("MSecGeom"), 1)
-        if shape != 2:
-            for field in ["MPropSetID1", "MPropSetID2"]:
-                prop_id = _as_int(member.get(field))
-                if prop_id and prop_id not in prop_ids:
-                    repaired["prop_sets_cyl"].append({"PropSetID": prop_id, "PropD": 6, "PropThck": 0.06})
-                    prop_ids.add(prop_id)
-                    warnings.append(
-                        f"Auto-added missing cylindrical PropSetID {prop_id} referenced by Member {member_id}."
-                    )
-        if _as_int(member.get("MCoefMod"), 1) == 3 and member_id and member_id not in coeff_ids:
-            repaired["member_coeffs_cyl"].append(_default_member_coeff(member_id))
-            coeff_ids.add(member_id)
-            warnings.append(f"Auto-added missing member coefficient row for Member {member_id}.")
+        rectangular = shape == 2
+        target_props = repaired["prop_sets_rec" if rectangular else "prop_sets_cyl"]
+        other_props = repaired["prop_sets_cyl" if rectangular else "prop_sets_rec"]
+        target_prop_ids = prop_rec_ids if rectangular else prop_ids
+        target_prop_key = "MPropSetID" if rectangular else "PropSetID"
+        other_prop_key = "PropSetID" if rectangular else "MPropSetID"
+        for field in ["MPropSetID1", "MPropSetID2"]:
+            prop_id = _as_int(member.get(field))
+            if prop_id and prop_id not in target_prop_ids:
+                source = next((row for row in other_props if _as_int(row.get(other_prop_key)) == prop_id), None)
+                target_props.append(_converted_property(source, rectangular, prop_id))
+                target_prop_ids.add(prop_id)
+                warnings.append(
+                    f"Auto-added missing {'rectangular' if rectangular else 'cylindrical'} {target_prop_key} {prop_id} referenced by Member {member_id}."
+                )
+
+        if _as_int(member.get("MCoefMod"), 1) == 3 and member_id:
+            target_name = "member_coeffs_rec" if rectangular else "member_coeffs_cyl"
+            other_name = "member_coeffs_cyl" if rectangular else "member_coeffs_rec"
+            target_coeff_ids = coeff_rec_ids if rectangular else coeff_ids
+            if member_id not in target_coeff_ids:
+                source = next((row for row in repaired[other_name] if _as_int(row.get("MemberID")) == member_id), None)
+                repaired[target_name].append(_converted_member_coeff(source, member_id, rectangular))
+                target_coeff_ids.add(member_id)
+                warnings.append(
+                    f"Auto-added missing {'rectangular ' if rectangular else ''}member coefficient row for Member {member_id}."
+                )
+            repaired[other_name] = [row for row in repaired[other_name] if _as_int(row.get("MemberID")) != member_id]
+            if rectangular:
+                coeff_ids.discard(member_id)
+            else:
+                coeff_rec_ids.discard(member_id)
 
     repaired["prop_sets_cyl"].sort(key=lambda row: _as_int(row.get("PropSetID")))
+    repaired["prop_sets_rec"].sort(key=lambda row: _as_int(row.get("MPropSetID")))
     repaired["member_coeffs_cyl"].sort(key=lambda row: _as_int(row.get("MemberID")))
+    repaired["member_coeffs_rec"].sort(key=lambda row: _as_int(row.get("MemberID")))
     return repaired, warnings
 
 
@@ -607,6 +672,9 @@ def validate_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") 
         dupes = _duplicate_ids(table.get(rows_name, []), key)
         if dupes:
             errors.append(f"Duplicate {key} values in {rows_name}: {dupes}")
+        invalid = sorted({_as_int(row.get(key)) for row in table.get(rows_name, []) if _as_int(row.get(key)) <= 0})
+        if invalid:
+            errors.append(f"{key} values in {rows_name} must be positive integers: {invalid}")
 
     axial_ids = _ids(table["axial"], "AxCoefID")
     joint_ids = _ids(table["joints"], "JointID")
@@ -629,28 +697,52 @@ def validate_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") 
     joint_by_id = {_as_int(row.get("JointID")): row for row in table["joints"]}
     prop_cyl_by_id = {_as_int(row.get("PropSetID")): row for row in table["prop_sets_cyl"]}
 
+    for prop in table["prop_sets_cyl"]:
+        diameter = _as_float(prop.get("PropD"))
+        thickness = _as_float(prop.get("PropThck"))
+        if diameter <= 0:
+            errors.append(f"Cylindrical PropSetID {prop.get('PropSetID')} requires PropD > 0.")
+        if thickness < 0 or (diameter > 0 and thickness * 2 >= diameter):
+            errors.append(f"Cylindrical PropSetID {prop.get('PropSetID')} has invalid PropThck={prop.get('PropThck')}.")
+    for prop in table["prop_sets_rec"]:
+        side_a = _as_float(prop.get("PropA"))
+        side_b = _as_float(prop.get("PropB"))
+        thickness = _as_float(prop.get("PropThck"))
+        if side_a <= 0 or side_b <= 0:
+            errors.append(f"Rectangular MPropSetID {prop.get('MPropSetID')} requires PropA > 0 and PropB > 0.")
+        if thickness < 0 or (min(side_a, side_b) > 0 and thickness * 2 >= min(side_a, side_b)):
+            errors.append(f"Rectangular MPropSetID {prop.get('MPropSetID')} has invalid PropThck={prop.get('PropThck')}.")
+
     for member in table["members"]:
         member_id = _as_int(member.get("MemberID"))
         j1 = _as_int(member.get("MJointID1"))
         j2 = _as_int(member.get("MJointID2"))
-        if joint_ids and j1 not in joint_ids:
+        if j1 not in joint_ids:
             errors.append(f"Member {member_id} references missing MJointID1 {j1}.")
-        if joint_ids and j2 not in joint_ids:
+        if j2 not in joint_ids:
             errors.append(f"Member {member_id} references missing MJointID2 {j2}.")
+        if j1 == j2:
+            errors.append(f"Member {member_id} must reference two different endpoint joints.")
 
         shape = _as_int(member.get("MSecGeom"), 1)
+        if shape not in {1, 2}:
+            errors.append(f"Member {member_id} has unsupported MSecGeom={member.get('MSecGeom')}.")
         if v4_target and shape == 2:
             errors.append(f"Member {member_id} is rectangular (MSecGeom=2), unsupported by current v4 runtime.")
 
         p1 = _as_int(member.get("MPropSetID1"))
         p2 = _as_int(member.get("MPropSetID2"))
         props = prop_rec_ids if shape == 2 else prop_cyl_ids
-        if p1 and p1 not in props:
+        if p1 not in props:
             errors.append(f"Member {member_id} references missing MPropSetID1 {p1}.")
-        if p2 and p2 not in props:
+        if p2 not in props:
             errors.append(f"Member {member_id} references missing MPropSetID2 {p2}.")
 
         coef_mod = _as_int(member.get("MCoefMod"), 1)
+        if coef_mod not in {1, 2, 3}:
+            errors.append(f"Member {member_id} has unsupported MCoefMod={member.get('MCoefMod')}.")
+        if _as_float(member.get("MDivSize"), 0.0) <= 0:
+            errors.append(f"Member {member_id} requires MDivSize > 0.")
         if coef_mod == 3:
             coeffs = coeff_rec_ids if shape == 2 else coeff_cyl_ids
             if member_id not in coeffs:
@@ -671,14 +763,19 @@ def validate_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") 
                 )
 
     member_ids = _ids(table["members"], "MemberID")
+    member_shapes = {_as_int(row.get("MemberID")): _as_int(row.get("MSecGeom"), 1) for row in table["members"]}
     for coeff in table["member_coeffs_cyl"]:
         member_id = _as_int(coeff.get("MemberID"))
         if member_ids and member_id not in member_ids:
             warnings.append(f"Member coefficient row {member_id} is not referenced by an active member.")
+        elif member_shapes.get(member_id) == 2:
+            errors.append(f"Member {member_id} is rectangular but its coefficient row is cylindrical.")
     for coeff in table["member_coeffs_rec"]:
         member_id = _as_int(coeff.get("MemberID"))
         if member_ids and member_id not in member_ids:
             warnings.append(f"Rectangular member coefficient row {member_id} is not referenced by an active member.")
+        elif member_shapes.get(member_id) not in {None, 2}:
+            errors.append(f"Member {member_id} is cylindrical but its coefficient row is rectangular.")
 
     return {"warnings": warnings, "errors": errors}
 

@@ -11,7 +11,12 @@ sys.path.insert(0, str(ROOT / "user_tools"))
 sys.path.insert(0, str(ROOT / "work_c4"))
 
 from driver_c4 import _ensure_hydrodyn_v4  # noqa: E402
-from hydrodyn_tables import apply_hydrodyn_tables, parse_hydrodyn_tables  # noqa: E402
+from hydrodyn_tables import (  # noqa: E402
+    apply_hydrodyn_tables,
+    parse_hydrodyn_tables,
+    repair_hydrodyn_tables,
+    validate_hydrodyn_tables,
+)
 
 
 def c4_hydrodyn_lines() -> list[str]:
@@ -206,6 +211,55 @@ MemberID MJointID1 MJointID2 MPropSetID1 MPropSetID2 MSecGeom MSpinOrient MDivSi
         tables["members"] = [{"MemberID": 1, "MJointID1": 1, "MJointID2": 2, "MPropSetID1": 1, "MPropSetID2": 1, "MSecGeom": 2, "MCoefMod": 1, "PropPot": False}]
         with self.assertRaises(ValueError):
             apply_hydrodyn_tables(lines, {"tables": tables}, target_format="auto_v4_runtime")
+
+    def test_v5_repairs_complete_rectangular_member_bundle(self):
+        tables = {
+            "joints": [
+                {"JointID": 1, "Jointxi": 0, "Jointyi": 0, "Jointzi": -20, "JointAxID": 0, "JointOvrlp": 1},
+                {"JointID": 2, "Jointxi": 0, "Jointyi": 0, "Jointzi": 10, "JointAxID": 0, "JointOvrlp": 2},
+            ],
+            "prop_sets_cyl": [{"PropSetID": 7, "PropD": 8, "PropThck": 0.08}],
+            "member_coeffs_cyl": [{"MemberID": 4, "MemberCd1": 1, "MemberCd2": 1, "MemberCa1": 1, "MemberCa2": 1}],
+            "members": [{
+                "MemberID": 4,
+                "MJointID1": 1,
+                "MJointID2": 2,
+                "MPropSetID1": 7,
+                "MPropSetID2": 7,
+                "MSecGeom": 2,
+                "MSpinOrient": 0,
+                "MDivSize": 0.5,
+                "MCoefMod": 3,
+                "MHstLMod": 0,
+                "PropPot": False,
+            }],
+        }
+        repaired, warnings = repair_hydrodyn_tables(tables, target_format="v5")
+        self.assertTrue(warnings)
+        self.assertEqual(repaired["joints"][0]["JointOvrlp"], 1, "v5 overlap data must not be rewritten as v4")
+        self.assertEqual(repaired["prop_sets_rec"][0]["MPropSetID"], 7)
+        self.assertEqual(repaired["prop_sets_rec"][0]["PropA"], 8)
+        self.assertEqual(repaired["member_coeffs_rec"][0]["MemberID"], 4)
+        self.assertEqual(repaired["member_coeffs_rec"][0]["MemberCdA1"], 1)
+        self.assertFalse(repaired["member_coeffs_cyl"])
+        self.assertFalse(validate_hydrodyn_tables(repaired, target_format="v5")["errors"])
+
+    def test_member_without_endpoint_rows_is_rejected(self):
+        tables = {
+            "prop_sets_cyl": [{"PropSetID": 1, "PropD": 6, "PropThck": 0.06}],
+            "members": [{
+                "MemberID": 1,
+                "MJointID1": 1,
+                "MJointID2": 2,
+                "MPropSetID1": 1,
+                "MPropSetID2": 1,
+                "MDivSize": 0.5,
+                "MCoefMod": 1,
+            }],
+        }
+        errors = validate_hydrodyn_tables(tables, target_format="v5")["errors"]
+        self.assertTrue(any("MJointID1" in error for error in errors))
+        self.assertTrue(any("MJointID2" in error for error in errors))
 
 
 if __name__ == "__main__":

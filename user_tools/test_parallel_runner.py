@@ -24,6 +24,37 @@ def runner_args(workers: int, continue_on_fail: bool = True, resume: bool = Fals
 
 
 class ParallelRunnerTests(unittest.TestCase):
+    def test_v5_shortcuts_and_matrix_edits_use_profile_file_names(self):
+        args = SimpleNamespace(
+            tmax=120.0,
+            wind_speed=12.8,
+            wave_mod=2,
+            wave_hs=1.5,
+            wave_tp=9.0,
+            set=[],
+            fst="IEA-main.fst",
+            inflow_file="IEA-Inflow.dat",
+            sea_state_file="IEA-SeaState.dat",
+        )
+        sets = run_scenario.merge_case_sets({}, args)
+        self.assertEqual(
+            set(sets),
+            {"IEA-main.fst", "IEA-Inflow.dat", "IEA-SeaState.dat"},
+        )
+        self.assertFalse(any(name.startswith("FOCAL_C4") for name in sets))
+
+        with tempfile.TemporaryDirectory() as folder:
+            run_dir = pathlib.Path(folder)
+            hydro_path = run_dir / "IEA-HydroDyn.dat"
+            hydro_path.write_text("HydroDyn v5 fixture\n", encoding="utf-8")
+            matrix_args = SimpleNamespace(matrix_edit=[], hydro_file=hydro_path.name)
+            case = {"matrix_edits": [{"block": "BQuad", "i": 1, "j": 1, "value": 2.0}]}
+            with mock.patch.object(run_scenario, "apply_edits", side_effect=lambda lines, edits: lines) as apply_mock:
+                changes = run_scenario.apply_matrix_edits_to_file(run_dir, case, matrix_args)
+
+        apply_mock.assert_called_once()
+        self.assertEqual(changes[0]["file"], "IEA-HydroDyn.dat")
+
     def test_binary_openfast_output_is_accepted(self):
         class FakeProcess:
             def __init__(self):

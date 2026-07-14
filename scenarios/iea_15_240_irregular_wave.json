@@ -1,6 +1,6 @@
 {
   "name": "iea_15_240_irregular_wave",
-  "description": "IEA-15-240-RWT UMaineSemi irregular-wave cases using the local OpenFAST 2026/v5 runtime.",
+  "description": "IEA-15-240-RWT UMaineSemi irregular-wave cases using the official OpenFAST v5.0.0 runtime profile.",
   "model_id": "iea_15_240_umaine",
   "runtime_id": "openfast_2026_dev",
   "cases": [

@@ -118,17 +118,17 @@ def merge_case_sets(case: dict[str, Any], args) -> dict[str, dict[str, Any]]:
         sets.setdefault(file_name, {})[key] = value
 
     if args.tmax is not None:
-        put("FOCAL_C4.fst", "TMax", args.tmax)
+        put(args.fst, "TMax", args.tmax)
     if args.wind_speed is not None:
-        put("FOCAL_C4.fst", "CompInflow", 1)
-        put("FOCAL_C4_InflowFile.dat", "WindType", 1)
-        put("FOCAL_C4_InflowFile.dat", "HWindSpeed", args.wind_speed)
+        put(args.fst, "CompInflow", 1)
+        put(args.inflow_file, "WindType", 1)
+        put(args.inflow_file, "HWindSpeed", args.wind_speed)
     if args.wave_mod is not None:
-        put("SeaState_DLC_1p6.dat", "WaveMod", args.wave_mod)
+        put(args.sea_state_file, "WaveMod", args.wave_mod)
     if args.wave_hs is not None:
-        put("SeaState_DLC_1p6.dat", "WaveHs", args.wave_hs)
+        put(args.sea_state_file, "WaveHs", args.wave_hs)
     if args.wave_tp is not None:
-        put("SeaState_DLC_1p6.dat", "WaveTp", args.wave_tp)
+        put(args.sea_state_file, "WaveTp", args.wave_tp)
     for item in args.set or []:
         file_name, key, value = parse_set(item)
         put(file_name, key, value)
@@ -164,7 +164,7 @@ def apply_matrix_edits_to_file(run_dir: pathlib.Path, case: dict[str, Any], args
             value = float(item["value"])
         edits.append((block, i, j, value))
 
-    hydro_file = case.get("hydro_file", "FOCAL_C4_HydroDyn.dat")
+    hydro_file = case.get("hydro_file") or args.hydro_file
     path = run_dir / hydro_file
     if not path.is_file():
         raise FileNotFoundError(f"HydroDyn file not found: {path}")
@@ -187,12 +187,13 @@ def apply_hydrodyn_tables_to_file(
     case: dict[str, Any],
     sets: dict[str, dict[str, Any]],
     runtime_format: str,
+    default_hydro_file: str = "HydroDyn.dat",
 ) -> tuple[list[dict[str, Any]], list[str]]:
     payload = case.get("hydrodyn_tables")
     if not isinstance(payload, dict):
         return [], []
 
-    hydro_file = case.get("hydro_file", "FOCAL_C4_HydroDyn.dat")
+    hydro_file = case.get("hydro_file") or default_hydro_file
     path = run_dir / hydro_file
     if not path.is_file():
         raise FileNotFoundError(f"HydroDyn file not found: {path}")
@@ -722,6 +723,7 @@ def run_case(
         case,
         sets,
         runtime_format=args.runtime_format,
+        default_hydro_file=args.hydro_file,
     )
     preflight_errors = validate_wind_assets(run_dir, sets)
 
@@ -895,7 +897,10 @@ def load_scenario(path: pathlib.Path) -> dict[str, Any]:
 def scenario_from_args(args) -> dict[str, Any]:
     name = args.scenario_name or "manual_general"
     case_name = args.name or f"manual_{dt.datetime.now():%Y%m%d_%H%M%S}"
-    return {"name": name, "cases": [{"name": case_name, "fst": args.fst, "set": {}}]}
+    return {
+        "name": name,
+        "cases": [{"name": case_name, "fst": args.fst, "hydro_file": args.hydro_file, "set": {}}],
+    }
 
 
 def list_scenarios() -> int:
@@ -917,6 +922,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario-name", default=None)
     parser.add_argument("--name", default=None)
     parser.add_argument("--fst", default="FOCAL_C4.fst")
+    parser.add_argument("--hydro-file", default="FOCAL_C4_HydroDyn.dat", help="Model-relative HydroDyn input used for matrix and table edits.")
+    parser.add_argument("--inflow-file", default="FOCAL_C4_InflowFile.dat", help="Model-relative InflowWind input used by shortcut options.")
+    parser.add_argument("--sea-state-file", default="SeaState_DLC_1p6.dat", help="Model-relative SeaState input used by shortcut options.")
     parser.add_argument("--model", default=None, help="Model template directory to copy for each case.")
     parser.add_argument("--openfast-exe", default=None, help="OpenFAST executable path.")
     parser.add_argument("--runtime-format", choices=["v4", "v5"], default="v4", help="HydroDyn table/runtime input format.")

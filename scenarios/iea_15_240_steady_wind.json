@@ -26,7 +26,7 @@
           "WaveMod": 0
         }
       },
-      "notes": "Uses the IEA profile and the local 2026 OpenFAST development executable.",
+      "notes": "Uses the IEA-15-240 v5 profile and the official OpenFAST v5.0.0 executable.",
       "timeout": 7200,
       "hydrodyn_tables": {
         "target_format": "v5",

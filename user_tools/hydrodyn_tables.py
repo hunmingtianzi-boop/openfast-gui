@@ -729,6 +729,13 @@ def validate_hydrodyn_tables(tables: dict[str, Any], target_format: str = "v4") 
             errors.append(f"Member {member_id} has unsupported MSecGeom={member.get('MSecGeom')}.")
         if v4_target and shape == 2:
             errors.append(f"Member {member_id} is rectangular (MSecGeom=2), unsupported by current v4 runtime.")
+        hydrostatic_mode = _as_int(member.get("MHstLMod"), 0)
+        allowed_hydrostatic_modes = {0, 1} if v4_target else ({0, 2} if shape == 2 else {0, 1, 2})
+        if hydrostatic_mode not in allowed_hydrostatic_modes:
+            errors.append(
+                f"Member {member_id} has MHstLMod={hydrostatic_mode}; allowed values are "
+                f"{sorted(allowed_hydrostatic_modes)} for this geometry and runtime format."
+            )
 
         p1 = _as_int(member.get("MPropSetID1"))
         p2 = _as_int(member.get("MPropSetID2"))

@@ -261,6 +261,22 @@ MemberID MJointID1 MJointID2 MPropSetID1 MPropSetID2 MSecGeom MSpinOrient MDivSi
         self.assertTrue(any("MJointID1" in error for error in errors))
         self.assertTrue(any("MJointID2" in error for error in errors))
 
+    def test_v5_rectangular_member_rejects_analytical_hydrostatics(self):
+        tables = {
+            "joints": [
+                {"JointID": 1, "Jointxi": 0, "Jointyi": 0, "Jointzi": -20, "JointAxID": 1, "JointOvrlp": 0},
+                {"JointID": 2, "Jointxi": 0, "Jointyi": 0, "Jointzi": 2, "JointAxID": 1, "JointOvrlp": 0},
+            ],
+            "prop_sets_rec": [{"MPropSetID": 1, "PropA": 6, "PropB": 6, "PropThck": 0.05}],
+            "members": [{
+                "MemberID": 1, "MJointID1": 1, "MJointID2": 2,
+                "MPropSetID1": 1, "MPropSetID2": 1, "MSecGeom": 2,
+                "MDivSize": 0.5, "MCoefMod": 1, "MHstLMod": 1,
+            }],
+        }
+        errors = validate_hydrodyn_tables(tables, target_format="v5")["errors"]
+        self.assertTrue(any("MHstLMod=1" in error for error in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

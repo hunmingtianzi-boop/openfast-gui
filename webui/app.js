@@ -158,7 +158,7 @@ const HYDRO_FIELD_LABELS = {
   MemberID: '构件号 / Member ID', MJointID1: '起点 / Start joint', MJointID2: '终点 / End joint',
   MPropSetID1: '起点截面 / Start property', MPropSetID2: '终点截面 / End property',
   MSecGeom: '截面形状 / Geometry', MSpinOrient: '旋转角 / Spin', MDivSize: '分段长度 / Division',
-  MCoefMod: '系数模式 / Coef. mode', MHstLMod: '海生物模式 / Marine growth', PropPot: '势流构件 / Potential flow',
+  MCoefMod: '系数模式 / Coef. mode', MHstLMod: '静水力模式 / Hydrostatics', PropPot: '势流模型已包含 / Included in potential-flow body',
   JointID: '节点号 / Joint ID', Jointxi: 'X 坐标 / X', Jointyi: 'Y 坐标 / Y', Jointzi: 'Z 坐标 / Z',
   JointAxID: '轴向系数号 / Axial ID', JointOvrlp: '重叠 / Overlap',
   PropSetID: '截面号 / Property ID', MPropSetID: '截面号 / Property ID', PropD: '直径 / Diameter',
@@ -3441,15 +3441,19 @@ function hydroMemberFieldOptions(member, field) {
     ];
   }
   if (field === 'MHstLMod') {
-    return [
-      { value: '0', label: '关闭 / Disabled (0)' },
-      { value: '1', label: '启用 / Enabled (1)' }
-    ];
+    const options = [{ value: '0', label: '关闭 / Disabled (0)' }];
+    if (state.meta?.runtimeProfile?.runtimeFormat !== 'v5' || shape !== 2) {
+      options.push({ value: '1', label: '解析法 / Analytical (1)' });
+    }
+    if (state.meta?.runtimeProfile?.runtimeFormat === 'v5') {
+      options.push({ value: '2', label: '半数值法 / Semi-numerical (2)' });
+    }
+    return options;
   }
   if (field === 'PropPot') {
     return [
-      { value: 'false', label: '否 / False' },
-      { value: 'true', label: '是 / True' }
+      { value: 'false', label: '否，完整 Morison 载荷 / No, full Morison loads' },
+      { value: 'true', label: '是，仅叠加黏性阻力 / Yes, viscous drag only' }
     ];
   }
   if (field === 'MJointID1' || field === 'MJointID2') {

@@ -1,0 +1,303 @@
+{
+  "name": "iea_15_240_irregular_morison_hybrid_demo",
+  "description": "IEA-15MW UMaineSemi irregular-wave hybrid demonstration: three symmetric outer-column Morison members add viscous drag to the v5 potential-flow model.",
+  "model_id": "iea_15_240_umaine",
+  "runtime_id": "openfast_2026_dev",
+  "cases": [
+    {
+      "name": "iea_wind8_irregular_morison_3column_demo",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 6000,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580799
+        }
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "DLC 1.1 NTM row: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1.0",
+        "reference": "NREL/TP-5000-76773 Section 4, Table 12 and Figures 21-24 checks",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "示例/待校准：三根对称外柱构件采用 D=12 m、t=0.05 m、MDivSize=0.5 m、MCoefMod=3、Cd=0.05。当前 v5 WAMIT 势流模型中 PropPot=true、MHstLMod=0，只叠加黏性阻力，正式载荷分析前应使用试验或 CFD 数据校准。 / Demo pending calibration: three symmetric outer-column members; PropPot=true avoids duplicating potential-flow inertia and hydrostatics.",
+      "timeout": 7200,
+      "hydrodyn_tables": {
+        "target_format": "v5",
+        "tables": {
+          "axial": [
+            {
+              "AxCoefID": 1,
+              "AxCd": 0,
+              "AxCa": 0,
+              "AxCp": 1,
+              "AxFDMod": 0,
+              "AxVnCOff": 0,
+              "AxFDLoFSc": 1
+            }
+          ],
+          "joints": [
+            {
+              "JointID": 1,
+              "Jointxi": -59.4,
+              "Jointyi": 0,
+              "Jointzi": -20,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 2,
+              "Jointxi": -59.4,
+              "Jointyi": 0,
+              "Jointzi": 2,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 3,
+              "Jointxi": 29.1,
+              "Jointyi": 51.5,
+              "Jointzi": -20,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 4,
+              "Jointxi": 29.1,
+              "Jointyi": 51.5,
+              "Jointzi": 2,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 5,
+              "Jointxi": 29.8,
+              "Jointyi": -51.5,
+              "Jointzi": -20,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            },
+            {
+              "JointID": 6,
+              "Jointxi": 29.8,
+              "Jointyi": -51.5,
+              "Jointzi": 2,
+              "JointAxID": 1,
+              "JointOvrlp": 0
+            }
+          ],
+          "prop_sets_cyl": [
+            {
+              "PropSetID": 1,
+              "PropD": 12,
+              "PropThck": 0.05
+            }
+          ],
+          "prop_sets_rec": [],
+          "simple_cyl": {
+            "SimplCd": 0.05,
+            "SimplCdMG": 0,
+            "SimplCa": 1,
+            "SimplCaMG": 0,
+            "SimplCp": 1,
+            "SimplCpMG": 0,
+            "SimplAxCd": 0,
+            "SimplAxCdMG": 0,
+            "SimplAxCa": 0,
+            "SimplAxCaMG": 0,
+            "SimplAxCp": 1,
+            "SimplAxCpMG": 0,
+            "SimplCb": 0,
+            "SimplCbMG": 0
+          },
+          "simple_rec": {
+            "SimplCdA": 0,
+            "SimplCdAMG": 0,
+            "SimplCdB": 0,
+            "SimplCdBMG": 0,
+            "SimplCaA": 0,
+            "SimplCaAMG": 0,
+            "SimplCaB": 0,
+            "SimplCaBMG": 0,
+            "SimplCp": 0,
+            "SimplCpMG": 0,
+            "SimplAxCd": 0,
+            "SimplAxCdMG": 0,
+            "SimplAxCa": 0,
+            "SimplAxCaMG": 0,
+            "SimplAxCp": 0,
+            "SimplAxCpMG": 0,
+            "SimplCb": 0,
+            "SimplCbMG": 0
+          },
+          "depth_cyl": [],
+          "depth_rec": [],
+          "member_coeffs_cyl": [
+            {
+              "MemberID": 1,
+              "MemberCd1": 0.05,
+              "MemberCd2": 0.05,
+              "MemberCdMG1": 0,
+              "MemberCdMG2": 0,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 0,
+              "MemberCaMG2": 0,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 0,
+              "MemberCpMG2": 0,
+              "MemberAxCd1": 0,
+              "MemberAxCd2": 0,
+              "MemberAxCdMG1": 0,
+              "MemberAxCdMG2": 0,
+              "MemberAxCa1": 0,
+              "MemberAxCa2": 0,
+              "MemberAxCaMG1": 0,
+              "MemberAxCaMG2": 0,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 0,
+              "MemberAxCpMG2": 0,
+              "MemberCb1": 0,
+              "MemberCb2": 0,
+              "MemberCbMG1": 0,
+              "MemberCbMG2": 0
+            },
+            {
+              "MemberID": 2,
+              "MemberCd1": 0.05,
+              "MemberCd2": 0.05,
+              "MemberCdMG1": 0,
+              "MemberCdMG2": 0,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 0,
+              "MemberCaMG2": 0,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 0,
+              "MemberCpMG2": 0,
+              "MemberAxCd1": 0,
+              "MemberAxCd2": 0,
+              "MemberAxCdMG1": 0,
+              "MemberAxCdMG2": 0,
+              "MemberAxCa1": 0,
+              "MemberAxCa2": 0,
+              "MemberAxCaMG1": 0,
+              "MemberAxCaMG2": 0,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 0,
+              "MemberAxCpMG2": 0,
+              "MemberCb1": 0,
+              "MemberCb2": 0,
+              "MemberCbMG1": 0,
+              "MemberCbMG2": 0
+            },
+            {
+              "MemberID": 3,
+              "MemberCd1": 0.05,
+              "MemberCd2": 0.05,
+              "MemberCdMG1": 0,
+              "MemberCdMG2": 0,
+              "MemberCa1": 1,
+              "MemberCa2": 1,
+              "MemberCaMG1": 0,
+              "MemberCaMG2": 0,
+              "MemberCp1": 1,
+              "MemberCp2": 1,
+              "MemberCpMG1": 0,
+              "MemberCpMG2": 0,
+              "MemberAxCd1": 0,
+              "MemberAxCd2": 0,
+              "MemberAxCdMG1": 0,
+              "MemberAxCdMG2": 0,
+              "MemberAxCa1": 0,
+              "MemberAxCa2": 0,
+              "MemberAxCaMG1": 0,
+              "MemberAxCaMG2": 0,
+              "MemberAxCp1": 1,
+              "MemberAxCp2": 1,
+              "MemberAxCpMG1": 0,
+              "MemberAxCpMG2": 0,
+              "MemberCb1": 0,
+              "MemberCb2": 0,
+              "MemberCbMG1": 0,
+              "MemberCbMG2": 0
+            }
+          ],
+          "member_coeffs_rec": [],
+          "members": [
+            {
+              "MemberID": 1,
+              "MJointID1": 1,
+              "MJointID2": 2,
+              "MPropSetID1": 1,
+              "MPropSetID2": 1,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": true
+            },
+            {
+              "MemberID": 2,
+              "MJointID1": 3,
+              "MJointID2": 4,
+              "MPropSetID1": 1,
+              "MPropSetID2": 1,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": true
+            },
+            {
+              "MemberID": 3,
+              "MJointID1": 5,
+              "MJointID2": 6,
+              "MPropSetID1": 1,
+              "MPropSetID2": 1,
+              "MSecGeom": 1,
+              "MSpinOrient": 0,
+              "MDivSize": 0.5,
+              "MCoefMod": 3,
+              "MHstLMod": 0,
+              "PropPot": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

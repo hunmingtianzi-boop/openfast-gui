@@ -15,7 +15,8 @@ USER_TOOLS = pathlib.Path(__file__).resolve().parent
 if str(USER_TOOLS) not in sys.path:
     sys.path.insert(0, str(USER_TOOLS))
 
-from results_workspace import analyze_output_file, discover_results, read_output_metadata, resolve_result_path
+from results_workspace import _psd_series, analyze_output_file, discover_results, read_output_metadata, resolve_result_path
+from plot_response_psd import create_response_psd_aggregate
 
 
 def write_ascii(path: pathlib.Path, samples: int = 1024) -> None:
@@ -23,6 +24,23 @@ def write_ascii(path: pathlib.Path, samples: int = 1024) -> None:
     for index in range(samples):
         time = index * 0.1
         rows.append(f"{time:.3f} {np.sin(time):.8f} {2.0 * np.cos(time):.8f}")
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def write_response_ascii(path: pathlib.Path, phase: float = 0.0) -> None:
+    rows = [
+        "Synthetic OpenFAST response output",
+        "Time Wave1Elev PtfmSurge PtfmHeave PtfmPitch",
+        "(s) (m) (m) (m) (deg)",
+    ]
+    for time in np.arange(0.0, 600.0 + 0.25, 0.5):
+        values = [
+            np.sin(2.0 * np.pi * 0.125 * time + phase),
+            0.2 * np.sin(2.0 * np.pi * 0.0125 * time + phase),
+            0.4 * np.sin(2.0 * np.pi * 0.05 * time + phase),
+            0.1 * np.sin(2.0 * np.pi * 0.0325 * time + phase),
+        ]
+        rows.append(f"{time:.3f} " + " ".join(f"{value:.8f}" for value in values))
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
@@ -68,6 +86,44 @@ def write_binary(path: pathlib.Path, file_id: int, samples: int = 1024) -> None:
 
 
 class ResultsWorkspaceTests(unittest.TestCase):
+    def test_creates_multi_seed_response_psd_figure_from_completed_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            summaries = []
+            for index, phase in enumerate([0.0, 0.4], start=1):
+                output = root / f"seed_{index:02d}.out"
+                write_response_ascii(output, phase=phase)
+                summaries.append(
+                    {
+                        "case": f"seed_{index:02d}",
+                        "execution": {"ok": True, "out": str(output)},
+                    }
+                )
+            png = root / "response_psd.png"
+            result = create_response_psd_aggregate(
+                case_summaries=summaries,
+                scenario_name="synthetic",
+                spec={"start_time_s": 100, "end_time_s": 600, "max_frequency_hz": 0.5},
+                out_png=png,
+            )
+            self.assertTrue(result["ok"])
+            self.assertTrue(png.is_file())
+            self.assertTrue(png.with_suffix(".pdf").is_file())
+            self.assertEqual([row["case_count"] for row in result["channels"]], [2, 2, 2, 2])
+            surge = next(row for row in result["channels"] if row["name"] == "PtfmSurge")
+            self.assertAlmostEqual(surge["ensemble_peak_frequency_hz"], 0.0125, delta=0.0041)
+
+    def test_psd_window_resolves_floating_platform_band_for_600_second_pilot(self):
+        dt = 0.0125
+        times = np.arange(100.0, 600.0 + dt / 2.0, dt)
+        target_frequency = 0.0125
+        values = np.sin(2.0 * np.pi * target_frequency * times)
+        frequency, density = _psd_series(times, values)
+        resolution = frequency[1] - frequency[0]
+        peak = frequency[1 + int(np.argmax(density[1:]))]
+        self.assertLessEqual(resolution, 0.0041)
+        self.assertAlmostEqual(peak, target_frequency, delta=resolution)
+
     def test_reads_ascii_metadata_analysis_statistics_and_psd(self):
         with tempfile.TemporaryDirectory() as temp:
             path = pathlib.Path(temp) / "case.out"

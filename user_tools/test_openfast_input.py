@@ -49,6 +49,47 @@ class OpenFastInputTests(unittest.TestCase):
             self.assertEqual(structure["summary"]["outListFiles"], 2)
             self.assertTrue(any(edge["key"] == "AFNames" for edge in structure["edges"]))
 
+    def test_yaml_dependency_scan_ignores_comment_file_words(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / "Main.fst").write_text(
+                '"Controller.yaml" ControllerFile - controller settings\n',
+                encoding="utf-8",
+            )
+            (root / "Controller.yaml").write_text(
+                "path_params:\n"
+                "  FAST_InputFile: 'Main.fst'  # Name of *.fst file\n"
+                "  FAST_directory: '.'  # Main directory, where the *.fst lives\n"
+                "  rotor_performance_filename: Cp_Ct_Cq.txt\n",
+                encoding="utf-8",
+            )
+            (root / "Cp_Ct_Cq.txt").write_text("data\n", encoding="utf-8")
+
+            structure = discover_model_dependencies(root, "Main.fst")
+            node_ids = {row["id"] for row in structure["nodes"]}
+            self.assertIn("Controller.yaml", node_ids)
+            self.assertIn("Cp_Ct_Cq.txt", node_ids)
+            self.assertNotIn("FAST_directory: '.'  # Main directory, where the *.fst lives", node_ids)
+            self.assertEqual(structure["summary"]["missing"], 0)
+
+    def test_dependency_scan_ignores_disabled_aeroacoustics_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / "Main.fst").write_text(
+                '"AeroDyn.dat" AeroFile - AeroDyn input\n',
+                encoding="utf-8",
+            )
+            (root / "AeroDyn.dat").write_text(
+                "False CompAA - aerodynamic acoustics disabled\n"
+                '"MissingAcoustics.dat" AA_InputFile - unused input\n',
+                encoding="utf-8",
+            )
+
+            structure = discover_model_dependencies(root, "Main.fst")
+            node_ids = {row["id"] for row in structure["nodes"]}
+            self.assertNotIn("MissingAcoustics.dat", node_ids)
+            self.assertEqual(structure["summary"]["missing"], 0)
+
     def test_scalar_and_outlist_parsing(self):
         lines = [
             '"A path/file.dat" EDFile - module file',

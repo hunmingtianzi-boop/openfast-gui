@@ -441,6 +441,23 @@ def parse_hydrodyn_tables(lines: list[str], runtime_format: str = RUNTIME_FORMAT
 
     for name, key in count_specs.items():
         fields, rows = _parse_count_table(lines, key)
+        if name == "prop_sets_rec" and fields and not set(DEFAULT_SCHEMAS[name]).issubset(fields):
+            # Some converted v5 decks keep the old cylindrical placeholder
+            # header while NPropSetsRec is zero.  Once the GUI adds a real
+            # rectangular section, trusting that placeholder would write the
+            # row as PropSetID/PropD and silently discard PropA/PropB.
+            idx = _find_key_line(lines, key)
+            count = _read_count(lines[idx], key) if idx is not None else 0
+            fields = list(DEFAULT_SCHEMAS[name])
+            rows = [
+                _row_from_tokens(fields, _tokens_before_comment(line))
+                for line in lines[(idx or 0) + 3 : (idx or 0) + 3 + count]
+            ]
+            if count:
+                warnings.append(
+                    "矩形截面表头无效，已按 HydroDyn v5 字段解释现有数据。 / "
+                    "Replaced an invalid rectangular-property header with the HydroDyn v5 schema."
+                )
         if fields:
             schemas[name] = fields
         tables[name] = rows
@@ -874,4 +891,4 @@ def apply_hydrodyn_tables(
             if written:
                 changes.append({"table": table_name, "rows": written})
 
-    return updated, changes, repair_warnings + validation["warnings"]
+    return updated, changes, list(current.get("warnings") or []) + repair_warnings + validation["warnings"]

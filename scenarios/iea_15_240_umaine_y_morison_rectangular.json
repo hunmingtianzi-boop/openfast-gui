@@ -1,0 +1,702 @@
+{
+  "name": "iea_15_240_umaine_y_morison_rectangular",
+  "description": "IEA-15MW UMaine VolturnUS-S official Y geometry with rectangular lower pontoons and circular upper struts, evaluated as a 600 s five-seed irregular-wave pilot for PSD workflow validation.",
+  "model_id": "iea_15_240_umaine",
+  "runtime_id": "openfast_2026_dev",
+  "response_psd": {
+    "enabled": true,
+    "start_time_s": 100,
+    "end_time_s": 600,
+    "max_frequency_hz": 0.5,
+    "channels": [
+      "Wave1Elev",
+      "PtfmSurge",
+      "PtfmHeave",
+      "PtfmPitch"
+    ],
+    "mode_frequencies_hz": {
+      "Surge": 0.012377769526,
+      "Pitch": 0.032478077298,
+      "Tower": 0.458
+    }
+  },
+  "cases": [
+    {
+      "name": "iea_dlc1p1_wind8_y_morison_600s_seed01",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 600,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580799
+        }
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "NREL/TP-5000-76773 DLC 1.1: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1.0",
+        "reference": "NREL/TP-5000-76773 Section 2.1, Table 2, Figure 3 and Section 4, Table 12",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "600 秒五随机种子试跑，第 01 个种子。TMax=WaveTMax=600 s，建议 PSD 使用 100–600 s；用于验证 Y 形 Morison 黏性阻力、运行链和频谱趋势，不替代 3600–6000 s 正式统计。 / 600 s five-seed pilot, seed 01. Shared official Y geometry with an uncalibrated generic Cd=0.8 prior; PropPot=true and MHstLMod=0 keep potential-flow inertia, excitation and hydrostatics in WAMIT.",
+      "timeout": 1800
+    },
+    {
+      "name": "iea_dlc1p1_wind8_y_morison_600s_seed02",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 600,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580798
+        }
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "NREL/TP-5000-76773 DLC 1.1: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1.0",
+        "reference": "NREL/TP-5000-76773 Section 2.1, Table 2, Figure 3 and Section 4, Table 12",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "600 秒五随机种子试跑，第 02 个种子。TMax=WaveTMax=600 s，建议 PSD 使用 100–600 s；用于验证 Y 形 Morison 黏性阻力、运行链和频谱趋势，不替代 3600–6000 s 正式统计。 / 600 s five-seed pilot, seed 02. Shared official Y geometry with an uncalibrated generic Cd=0.8 prior; PropPot=true and MHstLMod=0 keep potential-flow inertia, excitation and hydrostatics in WAMIT.",
+      "timeout": 1800
+    },
+    {
+      "name": "iea_dlc1p1_wind8_y_morison_600s_seed03",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 600,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580797
+        }
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "NREL/TP-5000-76773 DLC 1.1: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1.0",
+        "reference": "NREL/TP-5000-76773 Section 2.1, Table 2, Figure 3 and Section 4, Table 12",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "600 秒五随机种子试跑，第 03 个种子。TMax=WaveTMax=600 s，建议 PSD 使用 100–600 s；用于验证 Y 形 Morison 黏性阻力、运行链和频谱趋势，不替代 3600–6000 s 正式统计。 / 600 s five-seed pilot, seed 03. Shared official Y geometry with an uncalibrated generic Cd=0.8 prior; PropPot=true and MHstLMod=0 keep potential-flow inertia, excitation and hydrostatics in WAMIT.",
+      "timeout": 1800
+    },
+    {
+      "name": "iea_dlc1p1_wind8_y_morison_600s_seed04",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 600,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580796
+        }
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "NREL/TP-5000-76773 DLC 1.1: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1.0",
+        "reference": "NREL/TP-5000-76773 Section 2.1, Table 2, Figure 3 and Section 4, Table 12",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "600 秒五随机种子试跑，第 04 个种子。TMax=WaveTMax=600 s，建议 PSD 使用 100–600 s；用于验证 Y 形 Morison 黏性阻力、运行链和频谱趋势，不替代 3600–6000 s 正式统计。 / 600 s five-seed pilot, seed 04. Shared official Y geometry with an uncalibrated generic Cd=0.8 prior; PropPot=true and MHstLMod=0 keep potential-flow inertia, excitation and hydrostatics in WAMIT.",
+      "timeout": 1800
+    },
+    {
+      "name": "iea_dlc1p1_wind8_y_morison_600s_seed05",
+      "fst": "IEA-15-240-RWT-UMaineSemi.fst",
+      "hydro_file": "IEA-15-240-RWT-UMaineSemi_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-UMaineSemi.fst": {
+          "TMax": 600,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompMooring": 3
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8
+        },
+        "IEA-15-240-RWT-UMaineSemi_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 600,
+          "WaveDT": 0.25,
+          "WaveHs": 1.32,
+          "WaveTp": 8.01,
+          "WavePkShp": 1,
+          "WvLowCOff": 0.111527,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": -561580795
+        }
+      },
+      "comparison": {
+        "mode": "paper_metrics",
+        "label": "NREL/TP-5000-76773 DLC 1.1: Wind=8 m/s, Hs=1.32 m, Tp=8.01 s, Gamma=1.0",
+        "reference": "NREL/TP-5000-76773 Section 2.1, Table 2, Figure 3 and Section 4, Table 12",
+        "start_time_s": 100,
+        "limits": {
+          "platform_pitch_abs_max_deg": 6,
+          "horizontal_offset_abs_max_m": 25,
+          "rna_accel_abs_max_mps2": 1.5,
+          "fairlead_tension_abs_max_kN": 22286
+        }
+      },
+      "notes": "600 秒五随机种子试跑，第 05 个种子。TMax=WaveTMax=600 s，建议 PSD 使用 100–600 s；用于验证 Y 形 Morison 黏性阻力、运行链和频谱趋势，不替代 3600–6000 s 正式统计。 / 600 s five-seed pilot, seed 05. Shared official Y geometry with an uncalibrated generic Cd=0.8 prior; PropPot=true and MHstLMod=0 keep potential-flow inertia, excitation and hydrostatics in WAMIT.",
+      "timeout": 1800
+    }
+  ],
+  "hydrodyn_tables": {
+    "target_format": "v5",
+    "tables": {
+      "axial": [
+        {
+          "AxCoefID": 1,
+          "AxCd": 0,
+          "AxCa": 0,
+          "AxCp": 0,
+          "AxFDMod": 0,
+          "AxVnCOff": 0,
+          "AxFDLoFSc": 1
+        }
+      ],
+      "joints": [
+        {
+          "JointID": 1,
+          "Jointxi": 0,
+          "Jointyi": 0,
+          "Jointzi": -20,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 2,
+          "Jointxi": 0,
+          "Jointyi": 0,
+          "Jointzi": -16.5,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 3,
+          "Jointxi": 0,
+          "Jointyi": 0,
+          "Jointzi": 14.545,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 4,
+          "Jointxi": 0,
+          "Jointyi": 0,
+          "Jointzi": 15,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 5,
+          "Jointxi": -51.75,
+          "Jointyi": 0,
+          "Jointzi": -20,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 6,
+          "Jointxi": -51.75,
+          "Jointyi": 0,
+          "Jointzi": -16.5,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 7,
+          "Jointxi": -51.75,
+          "Jointyi": 0,
+          "Jointzi": 14.545,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 8,
+          "Jointxi": -51.75,
+          "Jointyi": 0,
+          "Jointzi": 15,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 9,
+          "Jointxi": 25.875,
+          "Jointyi": 44.816815743,
+          "Jointzi": -20,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 10,
+          "Jointxi": 25.875,
+          "Jointyi": 44.816815743,
+          "Jointzi": -16.5,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 11,
+          "Jointxi": 25.875,
+          "Jointyi": 44.816815743,
+          "Jointzi": 14.545,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 12,
+          "Jointxi": 25.875,
+          "Jointyi": 44.816815743,
+          "Jointzi": 15,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 13,
+          "Jointxi": 25.875,
+          "Jointyi": -44.816815743,
+          "Jointzi": -20,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 14,
+          "Jointxi": 25.875,
+          "Jointyi": -44.816815743,
+          "Jointzi": -16.5,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 15,
+          "Jointxi": 25.875,
+          "Jointyi": -44.816815743,
+          "Jointzi": 14.545,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        },
+        {
+          "JointID": 16,
+          "Jointxi": 25.875,
+          "Jointyi": -44.816815743,
+          "Jointzi": 15,
+          "JointAxID": 1,
+          "JointOvrlp": 0
+        }
+      ],
+      "prop_sets_cyl": [
+        {
+          "PropSetID": 1,
+          "PropD": 10,
+          "PropThck": 0.05
+        },
+        {
+          "PropSetID": 2,
+          "PropD": 12.5,
+          "PropThck": 0.05
+        },
+        {
+          "PropSetID": 3,
+          "PropD": 0.91,
+          "PropThck": 0.02
+        }
+      ],
+      "prop_sets_rec": [
+        {
+          "MPropSetID": 1,
+          "PropA": 12.5,
+          "PropB": 7,
+          "PropThck": 0.04
+        }
+      ],
+      "simple_cyl": {
+        "SimplCd": 0.8,
+        "SimplCdMG": 0,
+        "SimplCa": 0,
+        "SimplCaMG": 0,
+        "SimplCp": 0,
+        "SimplCpMG": 0,
+        "SimplAxCd": 0,
+        "SimplAxCdMG": 0,
+        "SimplAxCa": 0,
+        "SimplAxCaMG": 0,
+        "SimplAxCp": 0,
+        "SimplAxCpMG": 0,
+        "SimplCb": 0,
+        "SimplCbMG": 0
+      },
+      "simple_rec": {
+        "SimplCdA": 0.8,
+        "SimplCdAMG": 0,
+        "SimplCdB": 0.8,
+        "SimplCdBMG": 0,
+        "SimplCaA": 0,
+        "SimplCaAMG": 0,
+        "SimplCaB": 0,
+        "SimplCaBMG": 0,
+        "SimplCp": 0,
+        "SimplCpMG": 0,
+        "SimplAxCd": 0,
+        "SimplAxCdMG": 0,
+        "SimplAxCa": 0,
+        "SimplAxCaMG": 0,
+        "SimplAxCp": 0,
+        "SimplAxCpMG": 0,
+        "SimplCb": 0,
+        "SimplCbMG": 0
+      },
+      "depth_cyl": [],
+      "depth_rec": [],
+      "member_coeffs_cyl": [],
+      "member_coeffs_rec": [],
+      "members": [
+        {
+          "MemberID": 1,
+          "MJointID1": 1,
+          "MJointID2": 2,
+          "MPropSetID1": 1,
+          "MPropSetID2": 1,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 2,
+          "MJointID1": 2,
+          "MJointID2": 3,
+          "MPropSetID1": 1,
+          "MPropSetID2": 1,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 3,
+          "MJointID1": 3,
+          "MJointID2": 4,
+          "MPropSetID1": 1,
+          "MPropSetID2": 1,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 0.25,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 4,
+          "MJointID1": 5,
+          "MJointID2": 6,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 5,
+          "MJointID1": 6,
+          "MJointID2": 7,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 6,
+          "MJointID1": 7,
+          "MJointID2": 8,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 0.25,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 7,
+          "MJointID1": 9,
+          "MJointID2": 10,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 8,
+          "MJointID1": 10,
+          "MJointID2": 11,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 9,
+          "MJointID1": 11,
+          "MJointID2": 12,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 0.25,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 10,
+          "MJointID1": 13,
+          "MJointID2": 14,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 11,
+          "MJointID1": 14,
+          "MJointID2": 15,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 12,
+          "MJointID1": 15,
+          "MJointID2": 16,
+          "MPropSetID1": 2,
+          "MPropSetID2": 2,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 0.25,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 13,
+          "MJointID1": 2,
+          "MJointID2": 6,
+          "MPropSetID1": 1,
+          "MPropSetID2": 1,
+          "MSecGeom": 2,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 14,
+          "MJointID1": 2,
+          "MJointID2": 10,
+          "MPropSetID1": 1,
+          "MPropSetID2": 1,
+          "MSecGeom": 2,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 15,
+          "MJointID1": 2,
+          "MJointID2": 14,
+          "MPropSetID1": 1,
+          "MPropSetID2": 1,
+          "MSecGeom": 2,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 16,
+          "MJointID1": 3,
+          "MJointID2": 7,
+          "MPropSetID1": 3,
+          "MPropSetID2": 3,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 17,
+          "MJointID1": 3,
+          "MJointID2": 11,
+          "MPropSetID1": 3,
+          "MPropSetID2": 3,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        },
+        {
+          "MemberID": 18,
+          "MJointID1": 3,
+          "MJointID2": 15,
+          "MPropSetID1": 3,
+          "MPropSetID2": 3,
+          "MSecGeom": 1,
+          "MSpinOrient": 0,
+          "MDivSize": 1,
+          "MCoefMod": 1,
+          "MHstLMod": 0,
+          "PropPot": true
+        }
+      ]
+    }
+  }
+}

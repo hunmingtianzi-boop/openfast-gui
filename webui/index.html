@@ -489,22 +489,59 @@
           <div id="hydroStatus" class="hint"></div>
         </section>
         <div class="hydro-grid">
-          <section class="panel">
-            <div class="panel-head"><h2>Morison 构件 / Members</h2></div>
-            <div id="hydroMembers"></div>
-          </section>
-          <section id="hydroLinkedPanel" class="panel hydro-linked-panel">
+          <section id="hydroLinkedPanel" class="panel hydro-linked-panel hydro-geometry-panel">
             <div class="panel-head hydro-linked-head">
               <div>
-                <p class="section-kicker">当前构件联动 / Current member linkage</p>
-                <h2>端点、截面与系数 / Endpoints, property and coefficients</h2>
+                <p class="section-kicker">几何校核与联动 / Geometry check and linked editing</p>
+                <h2>Morison 构件 XYZ 工作区 / XYZ workspace</h2>
               </div>
               <label>
                 <span class="sr-only">选择 Morison 构件 / Select Morison member</span>
                 <select id="hydroMemberSelect" aria-label="选择 Morison 构件 / Select Morison member"></select>
               </label>
             </div>
-            <div id="hydroLinkedBundle"></div>
+            <div class="hydro-geometry-layout">
+              <section class="hydro-geometry-column" aria-label="Morison 构件 XYZ 几何视图 / Geometry workspace">
+                <div class="hydro-geometry-toolbar">
+                  <div class="hydro-view-buttons" role="group" aria-label="几何视图 / Geometry view">
+                    <button id="hydroView3d" class="mini-button active" type="button" aria-pressed="true">3D</button>
+                    <button id="hydroViewXy" class="mini-button" type="button" aria-pressed="false">XY</button>
+                    <button id="hydroViewXz" class="mini-button" type="button" aria-pressed="false">XZ</button>
+                    <button id="hydroViewYz" class="mini-button" type="button" aria-pressed="false">YZ</button>
+                  </div>
+                  <div class="hydro-camera-buttons">
+                    <button id="hydroFitBtn" class="mini-button" type="button">适应构件 / Fit</button>
+                    <button id="hydroResetViewBtn" class="mini-button" type="button">重置 / Reset</button>
+                  </div>
+                </div>
+                <div class="hydro-layer-controls" aria-label="几何图层 / Geometry layers">
+                  <label><input id="hydroLabelsToggle" type="checkbox" checked> 节点编号 / Joint IDs</label>
+                  <label><input id="hydroWaterToggle" type="checkbox" checked> 水面 / MSL</label>
+                  <label><input id="hydroSeabedToggle" type="checkbox"> 海床 / Seabed</label>
+                  <label><input id="hydroWaveToggle" type="checkbox" checked> 波向 / Wave</label>
+                  <label><input id="hydroDivisionsToggle" type="checkbox"> 预估离散 / MDiv</label>
+                </div>
+                <div id="hydroGeometryViewport" class="hydro-geometry-viewport" aria-label="Morison XYZ geometry viewport">
+                  <div id="hydroGeometryEmpty" class="hydro-geometry-empty">
+                    <strong id="hydroGeometryTitle">尚无可显示构件 / No drawable members</strong>
+                    <span>添加构件或修复端点坐标后，几何会在这里自动更新。</span>
+                  </div>
+                </div>
+                <div id="hydroGeometryStatus" class="hydro-geometry-status" aria-live="polite"></div>
+                <div id="hydroGeometryInspector" class="hydro-geometry-inspector" hidden></div>
+              </section>
+              <div class="hydro-linked-editor">
+                <div class="hydro-linked-editor-head">
+                  <strong>端点、截面与系数 / Endpoints, property and coefficients</strong>
+                  <span>表单是参数的唯一写入入口；三维视图只用于选择和校核。</span>
+                </div>
+                <div id="hydroLinkedBundle"></div>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Morison 构件 / Members</h2></div>
+            <div id="hydroMembers"></div>
           </section>
           <section class="panel">
             <div class="panel-head"><h2>端点节点 / Endpoint joints</h2></div>
@@ -784,6 +821,8 @@
   </main>
 
   <div id="toast" class="toast"></div>
+  <script src="/hydro_geometry.js"></script>
+  <script type="module" src="/hydro_viewer.js"></script>
   <script type="module" src="/vtk_viewer.js"></script>
   <script src="/app.js"></script>
 </body>

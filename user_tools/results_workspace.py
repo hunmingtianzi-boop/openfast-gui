@@ -404,6 +404,20 @@ def _sample_indices(length: int, max_points: int) -> np.ndarray:
     return np.unique(np.linspace(0, length - 1, max_points, dtype=np.int64))
 
 
+def _psd_sample_indices(frequency: np.ndarray, max_points: int, low_frequency_limit: float = 0.5) -> np.ndarray:
+    """Preserve the floating-platform/wave band before thinning high frequencies."""
+    if len(frequency) <= max_points:
+        return np.arange(len(frequency), dtype=np.int64)
+    low_count = int(np.searchsorted(frequency, low_frequency_limit, side="right"))
+    low_count = max(1, min(low_count, max_points))
+    low = np.arange(low_count, dtype=np.int64)
+    remaining = max_points - low_count
+    if remaining <= 0 or low_count >= len(frequency):
+        return low
+    high = _sample_indices(len(frequency) - low_count, remaining) + low_count
+    return np.unique(np.concatenate((low, high)))
+
+
 def _psd_series(times: np.ndarray, values: np.ndarray, max_points: int = 2000) -> tuple[np.ndarray, np.ndarray] | None:
     finite = np.isfinite(times) & np.isfinite(values)
     if np.count_nonzero(finite) < 32:
@@ -417,7 +431,14 @@ def _psd_series(times: np.ndarray, values: np.ndarray, max_points: int = 2000) -
     dt = float(np.median(positive))
     if dt <= 0:
         return None
-    nperseg = min(4096, 2 ** int(math.floor(math.log2(len(signal_values)))))
+    duration = float(time_values[-1] - time_values[0])
+    # Use a time-based Welch window instead of a fixed sample count. OpenFAST
+    # commonly writes at 0.0125 s, where 4096 samples cover only 51.2 s and
+    # cannot resolve the 0.01-0.03 Hz floating-platform response band. Half of
+    # a short record retains three 50%-overlapped segments; longer records use
+    # the same 768 s window as the irregular-wave report workflow.
+    segment_seconds = min(768.0, max(32.0, duration / 2.0))
+    nperseg = min(len(signal_values), max(32, int(round(segment_seconds / dt))))
     if nperseg < 32:
         return None
     frequency, density = signal.welch(
@@ -429,7 +450,7 @@ def _psd_series(times: np.ndarray, values: np.ndarray, max_points: int = 2000) -
         detrend="constant",
         scaling="density",
     )
-    indices = _sample_indices(len(frequency), max_points)
+    indices = _psd_sample_indices(frequency, max_points)
     return frequency[indices], density[indices]
 
 

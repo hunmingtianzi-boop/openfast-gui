@@ -59,6 +59,42 @@
         "IEA-15-240-RWT-UMaineSemi_ROSCO.yaml",
         "IEA-15-240-RWT/Wind/IEA15MW_IEC_ETM_U50.0_Seed60362647.in"
       ]
+    },
+    {
+      "id": "iea_15_240_report_monopile",
+      "name": "IEA-15MW 报告基准单桩 / Report monopile",
+      "description": "NREL/TP-5000-75698 定义的 30 m 水深固定式单桩 IEA 15 MW 基准模型，使用本地 OpenFAST v5 输入；与 UMaineSemi 浮式模型分开管理。",
+      "default": false,
+      "path": "${WORKSPACE_ROOT}/01_物理校准工作流/01_baseline/original_baseline_model",
+      "fst": "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile.fst",
+      "hydroFile": "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_HydroDyn.dat",
+      "inflowFile": "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat",
+      "seaStateFile": "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_SeaState.dat",
+      "seaStateCompKey": "CompSeaSt",
+      "defaultMooring": 0,
+      "compatibility": "iea15_monopile_v5",
+      "preferredRuntime": "openfast_2026_dev",
+      "supportedRuntimeFormats": ["v5"],
+      "referenceModelVersion": "IEA-15-240-RWT v1.1.12",
+      "referenceReport": "NREL/TP-5000-75698, March 2020",
+      "inputFiles": [
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile.fst",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_ElastoDyn.dat",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_ElastoDyn_tower.dat",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_AeroDyn15.dat",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_ServoDyn.dat",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_SeaState.dat",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_HydroDyn.dat",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_SubDyn.dat",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_DISCON.IN",
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_ROSCO.yaml",
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat",
+        "IEA-15-240-RWT/IEA-15-240-RWT_AeroDyn15_blade.dat",
+        "IEA-15-240-RWT/IEA-15-240-RWT_ElastoDyn_blade.dat",
+        "IEA-15-240-RWT/IEA-15-240-RWT_BeamDyn.dat",
+        "IEA-15-240-RWT/IEA-15-240-RWT_BeamDyn_blade.dat",
+        "IEA-15-240-RWT/DISCON.dll"
+      ]
     }
   ],
   "runtimes": [
@@ -74,7 +110,7 @@
       "name": "OpenFAST v5.0.0 official",
       "path": "${WORKSPACE_ROOT}/05_用户工作区/research_slow_drift_15mw/toolchain/openfast-v5.0.0/OpenFAST.exe",
       "runtimeFormat": "v5",
-      "description": "Official OpenFAST v5.0.0 runtime used by the IEA-15-240 UMaineSemi workflow."
+      "description": "Official OpenFAST v5.0.0 runtime used by the IEA-15-240 UMaineSemi and report-monopile workflows."
     }
   ]
 }

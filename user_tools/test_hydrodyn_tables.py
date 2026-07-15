@@ -199,6 +199,30 @@ MemberID MJointID1 MJointID2 MPropSetID1 MPropSetID2 MSecGeom MSpinOrient MDivSi
         self.assertEqual(len(meta["tables"]["member_coeffs_cyl"]), 1)
         self.assertIn("MSecGeom", meta["schemas"]["members"])
 
+        rect_count_idx = key_line(lines, "NPropSetsRec")
+        lines[rect_count_idx + 1] = "PropSetID PropD PropThck"
+        tables = meta["tables"]
+        tables["prop_sets_rec"] = [{"MPropSetID": 2, "PropA": 12.5, "PropB": 7.0, "PropThck": 0.04}]
+        tables["members"].append({
+            "MemberID": 2,
+            "MJointID1": 1,
+            "MJointID2": 2,
+            "MPropSetID1": 2,
+            "MPropSetID2": 2,
+            "MSecGeom": 2,
+            "MSpinOrient": 0,
+            "MDivSize": 1,
+            "MCoefMod": 1,
+            "MHstLMod": 0,
+            "PropPot": True,
+        })
+        updated, _, warnings = apply_hydrodyn_tables(lines, {"tables": tables}, target_format="v5")
+        rect_count_idx = key_line(updated, "NPropSetsRec")
+        self.assertIn("MPropSetID", updated[rect_count_idx + 1])
+        self.assertIn("PropA", updated[rect_count_idx + 1])
+        self.assertEqual(updated[rect_count_idx + 3].split(), ["2", "12.5", "7", "0.04"])
+        self.assertFalse(warnings)
+
     def test_v4_rejects_rectangular_member(self):
         lines = c4_hydrodyn_lines()
         meta = parse_hydrodyn_tables(lines)

@@ -4,7 +4,7 @@ param(
     [string]$OpenFastExe = "",
     [ValidateSet("v4", "v5")]
     [string]$RuntimeFormat = "v4",
-    [ValidateSet("focal_c4_v4", "none")]
+    [ValidateSet("focal_c4_v4", "iea15_monopile_v5", "none")]
     [string]$Compatibility = "focal_c4_v4",
     [string]$Fst = "",
     [ValidateRange(1, 8)]

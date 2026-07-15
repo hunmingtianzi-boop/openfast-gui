@@ -4,6 +4,16 @@ Use these JSON files for non-free-decay OpenFAST runs. Each scenario contains a 
 
 Scenarios may also include `model_id` and `runtime_id`. The GUI uses those fields to select the configured model/runtime profile before loading template keys or running cases. `iea_15_240_steady_wind.json` is the starter profile for the local IEA-15-240-RWT UMaineSemi model.
 `iea_15_240_irregular_wave.json` adds IEA-15-240 irregular-wave cases for the official OpenFAST v5.0.0 runtime profile.
+`iea_15_240_umaine_y_morison_rectangular.json` adds the report/CAD-defined VolturnUS-S Y geometry to the
+UMaineSemi v5 potential-flow model: one 10 m central column, three 12.5 m outer columns, three 12.5 m x 7.0 m
+rectangular lower pontoons, and three 0.91 m upper struts. All Morison members use `PropPot=true`; the included
+`Cd=0.8` values are uncalibrated official-ontology priors for geometry and workflow validation, not experimental truth.
+The scenario is a five-seed 600 s JONSWAP pilot (`TMax=WaveTMax=600 s`) with one scenario-level shared HydroDyn
+table payload. Use the 100-600 s interval for the first PSD workflow check; use longer records for final statistics.
+`iea_15_240_report_monopile_mean_metocean.json` registers the fixed-bottom 30 m monopile model defined by
+NREL/TP-5000-75698 as a separate report baseline. It intentionally does not replace or reinterpret the UMaineSemi
+floating model. The case uses the local OpenFAST v5 input conversion and the report's mean-site values U=8.65 m/s,
+Hs=1.4 m, and Tp=7.9 s.
 
 `focal_irregular_wave_compare.json` contains FOCAL C4 irregular-wave cases for the local experiment data in
 `D:\OpenFast\FOCAL_C4_workflow_hub\00_shared_assets\raw_data\focal_c4_organized\04_irregular_wave`.

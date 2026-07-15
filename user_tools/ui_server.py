@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import mimetypes
 import os
@@ -74,6 +75,15 @@ SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+\.json$")
 
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
+SCENARIO_LOCK = threading.Lock()
+
+
+class ScenarioRevisionConflict(RuntimeError):
+    def __init__(self, path: pathlib.Path, expected: str | None, current: str | None):
+        super().__init__(f"Scenario changed on disk: {path.name}")
+        self.path = path
+        self.expected = expected
+        self.current = current
 
 
 MODULE_PRESETS = [
@@ -170,6 +180,22 @@ def read_json(path: pathlib.Path):
 def write_json(path: pathlib.Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def scenario_revision(path: pathlib.Path) -> str | None:
+    if not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_scenario_if_current(path: pathlib.Path, value, expected_revision: str | None) -> str:
+    """Write a scenario only when the caller still owns the loaded revision."""
+    with SCENARIO_LOCK:
+        current_revision = scenario_revision(path)
+        if current_revision != expected_revision:
+            raise ScenarioRevisionConflict(path, expected_revision, current_revision)
+        write_json(path, value)
+        return scenario_revision(path) or ""
 
 
 def job_snapshot(job: dict) -> dict:
@@ -299,6 +325,59 @@ def case_file_targets(case: dict) -> set[str]:
     return targets
 
 
+def dependency_missing_count(model: dict, structure: dict, scenario: dict | None = None) -> int:
+    """Count unresolved references after applying case-level path overrides in memory."""
+    missing_nodes = {
+        str(node.get("id"))
+        for node in (structure.get("nodes") or [])
+        if node.get("id") and not node.get("exists")
+    }
+    if not missing_nodes or not isinstance(scenario, dict):
+        return len(missing_nodes)
+    cases = [case for case in (scenario.get("cases") or []) if isinstance(case, dict)]
+    if not cases:
+        return len(missing_nodes)
+
+    root = model_path(model)
+    edges_by_target: dict[str, list[dict]] = {}
+    for edge in structure.get("edges") or []:
+        target = str(edge.get("target") or "")
+        if target in missing_nodes:
+            edges_by_target.setdefault(target, []).append(edge)
+
+    unresolved = 0
+    ignored_values = {"", "unused", "none", "null"}
+    for target in missing_nodes:
+        incoming = edges_by_target.get(target) or []
+        if not incoming:
+            unresolved += 1
+            continue
+        resolved_for_all_cases = True
+        for case in cases:
+            sets = case.get("set") or {}
+            for edge in incoming:
+                source = str(edge.get("source") or "")
+                key = str(edge.get("key") or "")
+                overrides = sets.get(source) or {}
+                if key not in overrides:
+                    resolved_for_all_cases = False
+                    break
+                override = str(overrides[key]).strip().strip('"').strip("'")
+                if override.lower() in ignored_values:
+                    continue
+                candidate = pathlib.Path(override.replace("\\", "/"))
+                if not candidate.is_absolute():
+                    candidate = (root / pathlib.PurePosixPath(source)).parent / candidate
+                if not candidate.is_file():
+                    resolved_for_all_cases = False
+                    break
+            if not resolved_for_all_cases:
+                break
+        if not resolved_for_all_cases:
+            unresolved += 1
+    return unresolved
+
+
 def readiness_issues(
     model: dict,
     runtime: dict,
@@ -342,10 +421,11 @@ def readiness_issues(
 
     structure = structure or dependency_structure_for_model(model)
     summary = structure.get("summary") or {}
-    if model.get("exists") and model.get("fstExists") and summary.get("missing"):
+    missing_count = dependency_missing_count(model, structure, scenario=scenario)
+    if model.get("exists") and model.get("fstExists") and missing_count:
         issues.append(readiness_issue(
             "dependency_missing", "warning", ["global", "context", "model"],
-            count=int(summary.get("missing") or 0),
+            count=missing_count,
         ))
     hydro_format = hydrodyn_format_for_model(model) if model.get("hydroExists") else "missing"
     if model.get("hydroFile") and not model.get("hydroExists"):
@@ -847,11 +927,30 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def send_error_json(self, message, status=400, issues: list[dict] | None = None):
+    def send_error_json(self, message, status=400, issues: list[dict] | None = None, **extra):
         payload = {"ok": False, "error": str(message)}
         if issues:
             payload["issues"] = issues
+        payload.update(extra)
         self.send_json(payload, status=status)
+
+    def send_scenario_conflict(self, conflict: ScenarioRevisionConflict):
+        issue = {
+            "code": "scenario_revision_conflict",
+            "severity": "error",
+            "scopes": ["global", "context", "compose", "advanced", "runlog"],
+            "file": conflict.path.name,
+            "expectedRevision": conflict.expected,
+            "currentRevision": conflict.current,
+        }
+        return self.send_error_json(
+            "场景已在另一个标签页中更新；本次保存或运行已阻止。请重新加载场景后再试。 / "
+            "The scenario was updated in another tab. This save or run was blocked; reload the scenario and try again.",
+            status=409,
+            issues=[issue],
+            code="scenario_revision_conflict",
+            currentRevision=conflict.current,
+        )
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -872,7 +971,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/scenario":
                 name = qs.get("file", [""])[0]
                 path_obj = scenario_path(name)
-                return self.send_json({"file": path_obj.name, "data": read_json(path_obj)})
+                with SCENARIO_LOCK:
+                    data = read_json(path_obj)
+                    revision = scenario_revision(path_obj)
+                return self.send_json({"file": path_obj.name, "data": data, "revision": revision})
             if path == "/api/results":
                 return self.send_json(discover_results(RUNS))
             if path == "/api/results/meta":
@@ -960,8 +1062,11 @@ class Handler(BaseHTTPRequestHandler):
                 data = body.get("data")
                 if not isinstance(data, dict):
                     raise ValueError("Missing scenario data")
-                write_json(path_obj, data)
-                return self.send_json({"ok": True, "file": path_obj.name, "path": str(path_obj)})
+                try:
+                    revision = write_scenario_if_current(path_obj, data, body.get("expectedRevision"))
+                except ScenarioRevisionConflict as conflict:
+                    return self.send_scenario_conflict(conflict)
+                return self.send_json({"ok": True, "file": path_obj.name, "path": str(path_obj), "revision": revision})
             if parsed.path == "/api/jobs":
                 data = body.get("scenario")
                 if not isinstance(data, dict):
@@ -987,7 +1092,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not filename.endswith(".json"):
                     filename += ".json"
                 path_obj = scenario_path(filename)
-                write_json(path_obj, data)
+                try:
+                    revision = write_scenario_if_current(path_obj, data, body.get("expectedRevision"))
+                except ScenarioRevisionConflict as conflict:
+                    return self.send_scenario_conflict(conflict)
                 job_id = uuid.uuid4().hex[:12]
                 with JOBS_LOCK:
                     JOBS[job_id] = {
@@ -1000,7 +1108,7 @@ class Handler(BaseHTTPRequestHandler):
                     }
                 thread = threading.Thread(target=run_job, args=(job_id, path_obj, options), daemon=True)
                 thread.start()
-                return self.send_json({"ok": True, "jobId": job_id})
+                return self.send_json({"ok": True, "jobId": job_id, "revision": revision})
             if parsed.path == "/api/results/analyze":
                 start = body.get("start")
                 end = body.get("end")

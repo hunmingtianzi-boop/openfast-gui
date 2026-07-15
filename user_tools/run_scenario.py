@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from copy import deepcopy
 import datetime as dt
 import json
 import os
@@ -13,11 +14,14 @@ import re
 import shutil
 import subprocess
 import sys
+from threading import Lock
 import time
 from typing import Any
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+os.environ.setdefault("MPLBACKEND", "Agg")
+PLOT_LOCK = Lock()
 
 
 def configured_path(env_name: str, default: pathlib.Path) -> pathlib.Path:
@@ -58,7 +62,9 @@ def slug(text: str) -> str:
 def value_text(value: Any, old_value: str = "") -> str:
     if isinstance(value, bool):
         return "True" if value else "False"
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
         return f"{value:g}"
     text = str(value)
     old = old_value.strip()
@@ -320,6 +326,215 @@ def _replace_second_token_value(line: str, key: str, value: Any) -> str:
     return f"{indent}{value_text(value, old_value):<{max(13, len(old_value))}} {rest}"
 
 
+def _insert_after_key(lines: list[str], key: str, additions: list[str]) -> bool:
+    for index, line in enumerate(lines):
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].lower() == key.lower():
+            lines[index + 1:index + 1] = additions
+            return True
+    return False
+
+
+def _insert_before_key(lines: list[str], key: str, additions: list[str]) -> bool:
+    for index, line in enumerate(lines):
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].lower() == key.lower():
+            lines[index:index] = additions
+            return True
+    return False
+
+
+def _remove_key(lines: list[str], key: str) -> bool:
+    for index, line in enumerate(lines):
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].lower() == key.lower():
+            del lines[index]
+            return True
+    return False
+
+
+def _ensure_iea15_openfast_v5_primary(lines: list[str]) -> list[str]:
+    """Bring the report-era IEA 15 MW primary file up to the OpenFAST v5 schema."""
+    out = list(lines)
+    if not _has_key(out, "ModCoupling"):
+        _insert_after_key(out, "DT", [
+            "1                      ModCoupling - Module coupling method (switch) {1=loose; 2=tight with fixed Jacobian updates; 3=tight with automatic Jacobian updates}"
+        ])
+    if not _has_key(out, "RhoInf"):
+        _insert_after_key(out, "NumCrctn", [
+            "1.0                    RhoInf      - Numerical damping parameter for tight coupling generalized-alpha integrator (-)",
+            "1.0e-4                 ConvTol     - Convergence iteration error tolerance for tight coupling generalized-alpha integrator (-)",
+            "6                      MaxConvIter - Maximum number of convergence iterations for tight coupling generalized-alpha integrator (-)",
+        ])
+    if not _has_key(out, "NRotors"):
+        _insert_before_key(out, "CompElast", [
+            "1                      NRotors     - Number of rotors in turbine (-)"
+        ])
+    if not _has_key(out, "CompSoil"):
+        _insert_after_key(out, "CompIce", [
+            "0                      CompSoil    - Compute soil-structural dynamics (switch) {0=None; 1=SoilDyn}"
+        ])
+    if not _has_key(out, "MirrorRotor"):
+        _insert_after_key(out, "MHK", [
+            "False                  MirrorRotor - Flag to reverse rotor rotation direction [1 to NRotors] {F=Normal, T=Mirror}"
+        ])
+    if not _has_key(out, "SoilFile"):
+        _insert_after_key(out, "IceFile", [
+            '"unused"               SoilFile    - Name of the file containing the SoilDyn input parameters (quoted string)'
+        ])
+    return out
+
+
+def _ensure_iea15_elastodyn_v5(lines: list[str]) -> list[str]:
+    """Add ElastoDyn fields introduced after the report reference model was published."""
+    out = list(lines)
+    if not _has_key(out, "PitchDOF"):
+        _insert_after_key(out, "EdgeDOF", [
+            "False                  PitchDOF    - Blade pitch DOF (flag)"
+        ])
+    if not _has_key(out, "PtfmRefxt"):
+        _insert_before_key(out, "PtfmRefzt", [
+            "0.0                    PtfmRefxt   - Downwind distance to the platform reference point (meters)",
+            "0.0                    PtfmRefyt   - Lateral distance to the platform reference point (meters)",
+        ])
+    if not _has_key(out, "PBrIner(1)"):
+        _insert_after_key(out, "TipMass(3)", [
+            "0.0                    PBrIner(1)  - Pitch bearing inertia, blade 1 (kg m^2)",
+            "0.0                    PBrIner(2)  - Pitch bearing inertia, blade 2 (kg m^2)",
+            "0.0                    PBrIner(3)  - Pitch bearing inertia, blade 3 (kg m^2)",
+            "0.0                    BlPIner(1)  - Blade pitch inertia, blade 1 (kg m^2)",
+            "0.0                    BlPIner(2)  - Blade pitch inertia, blade 2 (kg m^2)",
+            "0.0                    BlPIner(3)  - Blade pitch inertia, blade 3 (kg m^2)",
+        ])
+    return out
+
+
+def _ensure_iea15_seastate_v5(lines: list[str]) -> list[str]:
+    """Add the v5 wave-current coupling switch without changing metocean values."""
+    out = list(lines)
+    if not _has_key(out, "WvCrntMod"):
+        _insert_after_key(out, "WaveStMod", [
+            "0                      WvCrntMod  - Combined wave-current model (0=simple superposition)"
+        ])
+    return out
+
+
+def _ensure_iea15_aerodyn_v5(lines: list[str]) -> list[str]:
+    """Remove the transitional Buoyancy switch that is not in AeroDyn v5."""
+    out = list(lines)
+    _remove_key(out, "Buoyancy")
+    for index, line in enumerate(out):
+        parts = line.split()
+        if len(parts) < 2 or parts[1].lower() != "numtwrnds":
+            continue
+        try:
+            node_count = int(float(parts[0]))
+        except ValueError:
+            break
+        header_index = index + 1
+        unit_index = index + 2
+        row_start = index + 3
+        if header_index < len(out) and "TwrCp" not in out[header_index]:
+            out[header_index] = out[header_index].rstrip() + "       TwrCp       TwrCa"
+        if unit_index < len(out) and len(out[unit_index].split()) == 5:
+            out[unit_index] = out[unit_index].rstrip() + "         (-)         (-)"
+        for row_index in range(row_start, min(row_start + node_count, len(out))):
+            if len(out[row_index].split()) == 5:
+                out[row_index] = out[row_index].rstrip() + "        0.0        0.0"
+        break
+    return out
+
+
+def _ensure_iea15_subdyn_v5(lines: list[str]) -> list[str]:
+    """Upgrade the report-era SubDyn layout while preserving its joints and properties."""
+    out = list(lines)
+    if not any("INITIAL RIGID-BODY POSITION" in line.upper() for line in out):
+        joint_section = next(
+            (index for index, line in enumerate(out) if "STRUCTURE JOINTS" in line.upper()),
+            None,
+        )
+        if joint_section is not None:
+            out[joint_section:joint_section] = [
+                "------- INITIAL RIGID-BODY POSITION [used only for floating structures with more than one transition piece] -------",
+                "RBSurge    RBSway     RBHeave    RBRoll     RBPitch    RBYaw",
+                "  (m)        (m)        (m)      (deg)      (deg)      (deg)",
+                "  0.0        0.0        0.0       0.0        0.0        0.0",
+            ]
+
+    for index, line in enumerate(out):
+        parts = line.split()
+        if len(parts) < 2 or parts[1].lower() != "ninterf":
+            continue
+        try:
+            interface_count = int(float(parts[0]))
+        except ValueError:
+            break
+        header_index = index + 1
+        unit_index = index + 2
+        row_start = index + 3
+        if header_index < len(out) and "TPID" not in out[header_index]:
+            header = out[header_index].split()
+            header.insert(1, "TPID")
+            out[header_index] = "   ".join(header)
+            if unit_index < len(out):
+                units = out[unit_index].split()
+                units.insert(1, "(-)")
+                out[unit_index] = "   ".join(units)
+            for row_index in range(row_start, min(row_start + interface_count, len(out))):
+                values = out[row_index].split()
+                values.insert(1, "1")
+                out[row_index] = "   ".join(values)
+        break
+
+    property_kind = ""
+    for index, line in enumerate(out):
+        upper = line.upper()
+        if "CIRCULAR BEAM CROSS-SECTION" in upper:
+            property_kind = "circular"
+            continue
+        if "RECTANGULAR BEAM CROSS-SECTION" in upper:
+            property_kind = "rectangular"
+            continue
+        parts = line.split()
+        if len(parts) < 2 or parts[1].lower() != "npropsets":
+            continue
+        replacement = "NPropSetsCyl" if property_kind == "circular" else "NPropSetsRec"
+        out[index] = re.sub(r"\bNPropSets\b", replacement, line, count=1)
+    return out
+
+
+def _ensure_iea15_hydrodyn_v5(lines: list[str]) -> list[str]:
+    """Add HydroDyn v5 scalar fields without changing Morison geometry."""
+    out = list(lines)
+    if not _has_key(out, "NAddDOF"):
+        _insert_after_key(out, "PtfmCOByt", [
+            "0                      NAddDOF    - Number of additional generalized WAMIT-body DOFs (-)"
+        ])
+    if not _has_key(out, "HstMod"):
+        _insert_after_key(out, "AMMod", [
+            "0                      HstMod     - Hydrostatic load model (0=still-water level; 1=instantaneous free surface)"
+        ])
+    return out
+
+
+def _ensure_iea15_servodyn_v5(lines: list[str]) -> list[str]:
+    """Add the blade-pitch neutral/spring/damping fields required by ServoDyn v5."""
+    out = list(lines)
+    if not _has_key(out, "PitNeut(1)"):
+        _insert_after_key(out, "TPCOn", [
+            "0.0                    PitNeut(1) - Blade 1 neutral pitch position (degrees)",
+            "0.0                    PitNeut(2) - Blade 2 neutral pitch position (degrees)",
+            "0.0                    PitNeut(3) - Blade 3 neutral pitch position (degrees)",
+            "7.0e8                  PitSpr(1)  - Blade 1 pitch spring constant (N-m/rad)",
+            "7.0e8                  PitSpr(2)  - Blade 2 pitch spring constant (N-m/rad)",
+            "7.0e8                  PitSpr(3)  - Blade 3 pitch spring constant (N-m/rad)",
+            "2.3e5                  PitDamp(1) - Blade 1 pitch damping constant (N-m/(rad/s))",
+            "2.3e5                  PitDamp(2) - Blade 2 pitch damping constant (N-m/(rad/s))",
+            "2.3e5                  PitDamp(3) - Blade 3 pitch damping constant (N-m/(rad/s))",
+        ])
+    return out
+
+
 def _ensure_inflowwind_v4(lines: list[str]) -> list[str]:
     """Add InflowWind fields required by the bundled OpenFAST v4 executable."""
     out = list(lines)
@@ -442,9 +657,91 @@ def copy_model(run_dir: pathlib.Path, overwrite: bool, model_template: pathlib.P
     shutil.copytree(model_template, run_dir)
 
 
-def prepare_openfast_inputs(run_dir: pathlib.Path, compatibility: str, runtime_format: str) -> list[dict[str, str]]:
-    """Apply the same OpenFAST v4 compatibility fixes used by the free-decay workflow."""
+def prepare_openfast_inputs(
+    run_dir: pathlib.Path,
+    compatibility: str,
+    runtime_format: str,
+    fst_name: str = "",
+) -> list[dict[str, str]]:
+    """Apply model-specific schema fixes only inside the copied run directory."""
     fixes: list[dict[str, str]] = []
+    if compatibility == "iea15_monopile_v5" and runtime_format == "v5":
+        fst_path = run_dir / fst_name
+        if not fst_path.is_file():
+            raise FileNotFoundError(f"IEA 15 MW primary input not found: {fst_path}")
+        lines = fst_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        updated = _ensure_iea15_openfast_v5_primary(lines)
+        if updated != lines:
+            fst_path.write_text("\n".join(updated), encoding="utf-8")
+            fixes.append({"file": fst_name, "fix": "OpenFAST v5 primary-file coupling/rotor/soil fields"})
+
+        ed_path = fst_path.with_name(f"{fst_path.stem}_ElastoDyn.dat")
+        if ed_path.is_file():
+            lines = ed_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            updated = _ensure_iea15_elastodyn_v5(lines)
+            if updated != lines:
+                ed_path.write_text("\n".join(updated), encoding="utf-8")
+                fixes.append({
+                    "file": str(ed_path.relative_to(run_dir)),
+                    "fix": "OpenFAST v5 ElastoDyn pitch/reference/inertia fields",
+                })
+
+        sea_state_path = fst_path.with_name(f"{fst_path.stem}_SeaState.dat")
+        if sea_state_path.is_file():
+            lines = sea_state_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            updated = _ensure_iea15_seastate_v5(lines)
+            if updated != lines:
+                sea_state_path.write_text("\n".join(updated), encoding="utf-8")
+                fixes.append({
+                    "file": str(sea_state_path.relative_to(run_dir)),
+                    "fix": "OpenFAST v5 SeaState wave-current field",
+                })
+
+        aero_path = fst_path.with_name(f"{fst_path.stem}_AeroDyn15.dat")
+        if aero_path.is_file():
+            lines = aero_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            updated = _ensure_iea15_aerodyn_v5(lines)
+            if updated != lines:
+                aero_path.write_text("\n".join(updated), encoding="utf-8")
+                fixes.append({
+                    "file": str(aero_path.relative_to(run_dir)),
+                    "fix": "OpenFAST v5 AeroDyn option layout",
+                })
+
+        subdyn_path = fst_path.with_name(f"{fst_path.stem}_SubDyn.dat")
+        if subdyn_path.is_file():
+            lines = subdyn_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            updated = _ensure_iea15_subdyn_v5(lines)
+            if updated != lines:
+                subdyn_path.write_text("\n".join(updated), encoding="utf-8")
+                fixes.append({
+                    "file": str(subdyn_path.relative_to(run_dir)),
+                    "fix": "OpenFAST v5 SubDyn rigid-body/interface/property fields",
+                })
+
+        hydrodyn_path = fst_path.with_name(f"{fst_path.stem}_HydroDyn.dat")
+        if hydrodyn_path.is_file():
+            lines = hydrodyn_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            updated = _ensure_iea15_hydrodyn_v5(lines)
+            if updated != lines:
+                hydrodyn_path.write_text("\n".join(updated), encoding="utf-8")
+                fixes.append({
+                    "file": str(hydrodyn_path.relative_to(run_dir)),
+                    "fix": "OpenFAST v5 HydroDyn additional-DOF/hydrostatic fields",
+                })
+
+        servodyn_path = fst_path.with_name(f"{fst_path.stem}_ServoDyn.dat")
+        if servodyn_path.is_file():
+            lines = servodyn_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            updated = _ensure_iea15_servodyn_v5(lines)
+            if updated != lines:
+                servodyn_path.write_text("\n".join(updated), encoding="utf-8")
+                fixes.append({
+                    "file": str(servodyn_path.relative_to(run_dir)),
+                    "fix": "OpenFAST v5 ServoDyn blade-pitch fields",
+                })
+        return fixes
+
     if compatibility != "focal_c4_v4" or runtime_format != "v4":
         return fixes
 
@@ -580,32 +877,36 @@ def run_comparison_plot(
         mode = str(comparison.get("mode") or comparison.get("type") or "experiment").lower()
         plot_dir = run_dir / "comparison"
 
-        if mode in {"paper", "paper_metrics", "metrics", "report_metrics"}:
-            from plot_paper_metrics import create_paper_metrics_comparison
+        # Matplotlib's pyplot state is process-global. Case execution may be
+        # parallel, so serialize only the short plotting section while the
+        # OpenFAST simulations continue to run concurrently.
+        with PLOT_LOCK:
+            if mode in {"paper", "paper_metrics", "metrics", "report_metrics"}:
+                from plot_paper_metrics import create_paper_metrics_comparison
 
-            local_png = plot_dir / "paper_metrics.png"
-            local_pdf = plot_dir / "paper_metrics.pdf"
-            result = create_paper_metrics_comparison(
-                openfast_out=out_path,
-                case=case,
-                scenario_name=scenario_name,
-                case_name=case_name,
-                out_png=local_png,
-                out_pdf=local_pdf,
-            )
-        else:
-            from plot_irregular_wave_experiment import create_case_comparison
+                local_png = plot_dir / "paper_metrics.png"
+                local_pdf = plot_dir / "paper_metrics.pdf"
+                result = create_paper_metrics_comparison(
+                    openfast_out=out_path,
+                    case=case,
+                    scenario_name=scenario_name,
+                    case_name=case_name,
+                    out_png=local_png,
+                    out_pdf=local_pdf,
+                )
+            else:
+                from plot_irregular_wave_experiment import create_case_comparison
 
-            local_png = plot_dir / "experiment_comparison.png"
-            local_pdf = plot_dir / "experiment_comparison.pdf"
-            result = create_case_comparison(
-                openfast_out=out_path,
-                case=case,
-                scenario_name=scenario_name,
-                case_name=case_name,
-                out_png=local_png,
-                out_pdf=local_pdf,
-            )
+                local_png = plot_dir / "experiment_comparison.png"
+                local_pdf = plot_dir / "experiment_comparison.pdf"
+                result = create_case_comparison(
+                    openfast_out=out_path,
+                    case=case,
+                    scenario_name=scenario_name,
+                    case_name=case_name,
+                    out_png=local_png,
+                    out_pdf=local_pdf,
+                )
         web_rel = pathlib.Path("assets") / "run_plots" / slug(scenario_name) / f"{case_name}_comparison.png"
         web_path = ROOT / "webui" / web_rel
         web_path.parent.mkdir(parents=True, exist_ok=True)
@@ -694,6 +995,39 @@ def run_focal_wave_aggregates(
     return results
 
 
+def run_response_psd_aggregate(
+    summaries: list[dict[str, Any]],
+    scenario: dict[str, Any],
+    scenario_name: str,
+    scenario_dir: pathlib.Path,
+) -> dict[str, Any]:
+    spec = scenario.get("response_psd") or {}
+    if not isinstance(spec, dict) or not spec or spec.get("enabled") is False:
+        return {"ok": False, "skipped": True, "reason": "response_psd_not_configured"}
+
+    from plot_response_psd import create_response_psd_aggregate
+
+    plot_dir = scenario_dir / "comparison"
+    local_png = plot_dir / "response_psd_aggregate.png"
+    local_pdf = plot_dir / "response_psd_aggregate.pdf"
+    result = create_response_psd_aggregate(
+        case_summaries=summaries,
+        scenario_name=scenario_name,
+        spec=spec,
+        out_png=local_png,
+        out_pdf=local_pdf,
+    )
+    if not result.get("ok"):
+        return result
+    web_rel = pathlib.Path("assets") / "run_plots" / slug(scenario_name) / "response_psd_aggregate.png"
+    web_path = ROOT / "webui" / web_rel
+    web_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(local_png, web_path)
+    result["web_png"] = str(web_path)
+    result["web_url"] = "/" + web_rel.as_posix() + f"?t={int(time.time())}"
+    return result
+
+
 def run_case(
     case: dict[str, Any],
     scenario_name: str,
@@ -710,7 +1044,12 @@ def run_case(
     copy_model(run_dir, overwrite=args.overwrite, model_template=args.model_template)
     input_file_override_changes = apply_input_file_overrides(run_dir, case.get("input_file_overrides"))
     input_edit_changes = apply_input_edits(run_dir, case.get("input_edits"))
-    compatibility_fixes = prepare_openfast_inputs(run_dir, compatibility=args.compatibility, runtime_format=args.runtime_format)
+    compatibility_fixes = prepare_openfast_inputs(
+        run_dir,
+        compatibility=args.compatibility,
+        runtime_format=args.runtime_format,
+        fst_name=fst_name,
+    )
     asset_changes = copy_case_assets(run_dir, case)
     turbsim_input_changes = write_case_turbsim_inputs(run_dir, case)
 
@@ -894,6 +1233,18 @@ def load_scenario(path: pathlib.Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def materialize_scenario_cases(scenario: dict[str, Any]) -> list[dict[str, Any]]:
+    """Clone cases and apply a scenario-level shared HydroDyn table payload."""
+    shared_hydrodyn = scenario.get("hydrodyn_tables")
+    cases: list[dict[str, Any]] = []
+    for raw_case in scenario.get("cases", []):
+        case = deepcopy(raw_case)
+        if shared_hydrodyn and not case.get("hydrodyn_tables"):
+            case["hydrodyn_tables"] = deepcopy(shared_hydrodyn)
+        cases.append(case)
+    return cases
+
+
 def scenario_from_args(args) -> dict[str, Any]:
     name = args.scenario_name or "manual_general"
     case_name = args.name or f"manual_{dt.datetime.now():%Y%m%d_%H%M%S}"
@@ -928,7 +1279,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default=None, help="Model template directory to copy for each case.")
     parser.add_argument("--openfast-exe", default=None, help="OpenFAST executable path.")
     parser.add_argument("--runtime-format", choices=["v4", "v5"], default="v4", help="HydroDyn table/runtime input format.")
-    parser.add_argument("--compatibility", choices=["focal_c4_v4", "none"], default="focal_c4_v4", help="Input compatibility fixes to apply after copying the model.")
+    parser.add_argument(
+        "--compatibility",
+        choices=["focal_c4_v4", "iea15_monopile_v5", "none"],
+        default="focal_c4_v4",
+        help="Input compatibility fixes to apply after copying the model.",
+    )
     parser.add_argument("--out-root", default=str(DEFAULT_RUNS))
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--generate-only", action="store_true")
@@ -988,7 +1344,7 @@ def main(argv=None) -> int:
     scenario_dir.mkdir(parents=True, exist_ok=True)
     report = scenario_dir / "scenario_results.json"
 
-    cases = list(scenario.get("cases", []))
+    cases = materialize_scenario_cases(scenario)
     if not cases:
         report.write_text("[]", encoding="utf-8")
         print(f"No cases found in scenario {scenario_name!r}.", file=sys.stderr, flush=True)
@@ -1040,6 +1396,22 @@ def main(argv=None) -> int:
                 )
         except Exception as exc:
             print(f"[scenario] FOCAL wave aggregate failed: {exc}", file=sys.stderr, flush=True)
+        try:
+            response_psd = run_response_psd_aggregate(summaries, scenario, scenario_name, scenario_dir)
+            if response_psd.get("ok"):
+                summaries.append(
+                    {
+                        "scenario": scenario_name,
+                        "case": "response_psd_aggregate",
+                        "run_dir": str(scenario_dir),
+                        "ok": True,
+                        "execution": {"ok": True, "skipped": True, "reason": "aggregate_plot"},
+                        "comparison_plot": response_psd,
+                        "notes": "Multi-seed OpenFAST response PSD aggregate from completed outputs.",
+                    }
+                )
+        except Exception as exc:
+            print(f"[scenario] response PSD aggregate failed: {exc}", file=sys.stderr, flush=True)
 
     report.write_text(json.dumps(summaries, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"REPORT: {report}", flush=True)

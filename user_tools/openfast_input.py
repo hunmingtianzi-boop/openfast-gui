@@ -773,13 +773,19 @@ def discover_model_dependencies(
         except OSError as exc:
             warnings.append(f"Could not read {node_id}: {exc}")
             continue
-        fields = parse_scalar_fields(lines)
+        format_name = "yaml" if path.suffix.lower() in {".yaml", ".yml"} else "openfast"
+        fields = parse_document_fields(lines, format_name=format_name)
         field_by_line = {int(row["line"]): row for row in fields}
+        field_values = {str(row["key"]).lower(): row.get("parsedValue", row.get("value")) for row in fields}
+        comp_aa_value = field_values.get("compaa")
+        aeroacoustics_disabled = str(comp_aa_value).strip().lower() in {"false", "0", "0.0"}
         node["scalarCount"] = len(fields)
         node["outListCount"] = len(parse_outlist_sections(lines))
         for line_number, line in enumerate(lines, start=1):
             field = field_by_line.get(line_number)
             for raw_reference, key in _reference_candidates(line, field):
+                if aeroacoustics_disabled and key.lower() == "aa_inputfile":
+                    continue
                 normalized = raw_reference.replace("\\", "/")
                 target = pathlib.Path(normalized)
                 if not target.is_absolute():

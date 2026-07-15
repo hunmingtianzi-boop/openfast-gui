@@ -1,0 +1,62 @@
+{
+  "name": "iea_15_240_report_monopile_mean_metocean",
+  "description": "IEA 15MW 技术报告基准：30 m 水深固定式单桩，在报告给出的美国东海岸平均风浪条件下进行几何与运行校核。",
+  "model_id": "iea_15_240_report_monopile",
+  "runtime_id": "openfast_2026_dev",
+  "cases": [
+    {
+      "name": "report_mean_site_U8p65_Hs1p4_Tp7p9",
+      "fst": "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile.fst",
+      "hydro_file": "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_HydroDyn.dat",
+      "set": {
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile.fst": {
+          "TMax": 600,
+          "CompElast": 1,
+          "CompInflow": 1,
+          "CompAero": 2,
+          "CompServo": 1,
+          "CompSeaSt": 1,
+          "CompHydro": 1,
+          "CompSub": 1,
+          "CompMooring": 0,
+          "WtrDpth": 30
+        },
+        "IEA-15-240-RWT/IEA-15-240-RWT_InflowFile.dat": {
+          "WindType": 1,
+          "HWindSpeed": 8.65
+        },
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_ServoDyn.dat": {
+          "DLL_FileName": "../IEA-15-240-RWT/DISCON.dll"
+        },
+        "IEA-15-240-RWT-Monopile/IEA-15-240-RWT-Monopile_SeaState.dat": {
+          "WaveMod": 2,
+          "WaveTMax": 850,
+          "WaveDT": 0.25,
+          "WaveHs": 1.4,
+          "WaveTp": 7.9,
+          "WavePkShp": "DEFAULT",
+          "WvLowCOff": 0.15708,
+          "WvHiCOff": 3.2,
+          "WaveDir": 0,
+          "WaveSeed(1)": 75698
+        }
+      },
+      "comparison": {
+        "mode": "report_baseline",
+        "label": "NREL/TP-5000-75698 mean-site baseline: U=8.65 m/s, Hs=1.4 m, Tp=7.9 s, WtrDpth=30 m",
+        "reference": "NREL/TP-5000-75698 Sections 1.2, 1.5 and 4; Table 4-2",
+        "start_time_s": 100,
+        "expected": {
+          "rated_power_MW": 15,
+          "rotor_diameter_m": 240,
+          "hub_height_m": 150,
+          "monopile_outer_diameter_m": 10,
+          "monopile_submerged_wall_thickness_m": 0.055341,
+          "water_depth_m": 30
+        }
+      },
+      "notes": "报告中的支撑结构是固定式单桩，不是 UMaineSemi。HydroDyn 湿表面构件采用官方 v1.1.12 几何并使用本地 v5 输入：J1=(0,0,-30.1 m)、J2=(0,0,15 m)、D=10 m、t=0.055341 m、MDivSize=0.5 m、MCoefMod=1、MHstLMod=1、PropPot=false。该 case 使用报告平均风浪参数做基准校核，不等同于完整 IEC DLC。 / Fixed-bottom report baseline on OpenFAST v5; not the UMaineSemi model.",
+      "timeout": 7200
+    }
+  ]
+}

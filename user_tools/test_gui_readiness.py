@@ -14,6 +14,20 @@ import ui_server  # noqa: E402
 
 
 class GuiReadinessTests(unittest.TestCase):
+    def test_scenario_revision_blocks_stale_writes_and_preserves_disk(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / "scenario.json"
+            first_revision = ui_server.write_scenario_if_current(path, {"name": "first"}, None)
+            self.assertEqual(first_revision, ui_server.scenario_revision(path))
+
+            with self.assertRaises(ui_server.ScenarioRevisionConflict):
+                ui_server.write_scenario_if_current(path, {"name": "stale"}, None)
+            self.assertEqual(ui_server.read_json(path), {"name": "first"})
+
+            second_revision = ui_server.write_scenario_if_current(path, {"name": "second"}, first_revision)
+            self.assertNotEqual(first_revision, second_revision)
+            self.assertEqual(ui_server.read_json(path), {"name": "second"})
+
     def test_scenario_mismatch_unknown_override_and_required_hydrodyn_are_blockers(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
@@ -43,6 +57,36 @@ class GuiReadinessTests(unittest.TestCase):
         runtime = {"id": "r", "path": "D:/missing/openfast.exe", "exists": False}
         issues = ui_server.readiness_issues(model, runtime, structure={"summary": {}}, require_runtime=False)
         self.assertNotIn("runtime_missing", {issue["code"] for issue in issues})
+
+    def test_case_override_resolves_a_missing_dependency_warning(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            (root / "main.fst").write_text('"missing.so" DLL_FileName\n', encoding="utf-8")
+            (root / "local.dll").write_bytes(b"controller")
+            model = {
+                "id": "m", "path": str(root), "exists": True,
+                "fst": "main.fst", "fstExists": True,
+            }
+            runtime = {"id": "r", "path": sys.executable, "exists": True}
+            structure = {
+                "nodes": [
+                    {"id": "main.fst", "exists": True, "external": False},
+                    {"id": "missing.so", "exists": False, "external": False},
+                ],
+                "edges": [
+                    {"source": "main.fst", "target": "missing.so", "key": "DLL_FileName"},
+                ],
+                "summary": {"missing": 1},
+            }
+            scenario = {
+                "model_id": "m",
+                "cases": [{"set": {"main.fst": {"DLL_FileName": "local.dll"}}}],
+            }
+
+            issues = ui_server.readiness_issues(
+                model, runtime, scenario=scenario, structure=structure,
+            )
+            self.assertNotIn("dependency_missing", {issue["code"] for issue in issues})
 
     def test_v5_model_rejects_v4_runtime_and_stale_scenario_runtime(self):
         with tempfile.TemporaryDirectory() as folder:

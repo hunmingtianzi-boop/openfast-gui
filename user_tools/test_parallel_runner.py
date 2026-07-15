@@ -24,6 +24,20 @@ def runner_args(workers: int, continue_on_fail: bool = True, resume: bool = Fals
 
 
 class ParallelRunnerTests(unittest.TestCase):
+    def test_integer_seed_writes_without_float_rounding(self):
+        self.assertEqual(run_scenario.value_text(-561580799), "-561580799")
+
+    def test_scenario_level_hydrodyn_tables_are_cloned_into_each_case(self):
+        shared = {"target_format": "v5", "tables": {"members": [{"MemberID": 13}]}}
+        scenario = {"hydrodyn_tables": shared, "cases": [{"name": "seed01"}, {"name": "seed02"}]}
+        cases = run_scenario.materialize_scenario_cases(scenario)
+
+        self.assertEqual([case["hydrodyn_tables"] for case in cases], [shared, shared])
+        self.assertIsNot(cases[0]["hydrodyn_tables"], shared)
+        self.assertIsNot(cases[0]["hydrodyn_tables"], cases[1]["hydrodyn_tables"])
+        cases[0]["hydrodyn_tables"]["tables"]["members"][0]["MemberID"] = 99
+        self.assertEqual(cases[1]["hydrodyn_tables"]["tables"]["members"][0]["MemberID"], 13)
+
     def test_v5_shortcuts_and_matrix_edits_use_profile_file_names(self):
         args = SimpleNamespace(
             tmax=120.0,

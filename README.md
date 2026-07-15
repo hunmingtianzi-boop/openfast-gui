@@ -1,83 +1,125 @@
 # OpenFAST GUI
 
-本仓库是一个面向 FOCAL C4、IEA-15-240-RWT 及其它 OpenFAST 模型的本地可视化工作台。它提供模型依赖发现、模块插件编辑、场景 JSON、OutList、HydroDyn Morison/矩阵、通用结果、线性化模态、VTK 三维查看，以及 TurbSim、FAST.Farm 和模块 driver 接口。
+面向 OpenFAST 工程模型的本地可视化工作台，重点支持 **IEA‑15‑240‑RWT + OpenFAST v5** 的场景配置、HydroDyn/Morison 几何编辑、不规则波批量计算与响应 PSD 分析，同时保留 FOCAL C4 + OpenFAST v4 兼容工作流。
 
-## 目录
+界面采用中文主文案、英文辅助说明。模型模板、OpenFAST 可执行文件、原始数据和仿真结果均留在本机；仓库只保存 GUI、运行工具、测试和可复用场景定义。
 
-```text
-webui/                    浏览器前端
-user_tools/               本地服务、模块插件、场景运行器和后处理
-work_c4/                  FOCAL C4 兼容修复与 OpenFAST 输入辅助函数
-scenarios/                示例工况 JSON
-scripts/                  PowerShell 快捷入口
-bin/                      本机 OpenFAST 可执行文件目录，不提交
-FOCAL_OpenFast_C4-main/   本机 FOCAL C4 模型模板目录，不提交
-runs/                     生成的 case 和仿真输出，不提交
-reports/                  本地报告和图，不提交
-tool_inputs/              本地 TurbSim/FAST.Farm 输入，不提交
-```
+## 当前能力 / Highlights
 
-## 本机准备
+- **运行就绪检查**：统一检查模型根目录、主 `.fst`、OpenFAST runtime、模块输入文件、场景归属和覆盖目标；阻断项会在全局状态条和相关页面就地显示。
+- **模型与运行时配置**：GUI 内校验并保存本机路径；本地覆盖按字段合并，不会丢失默认 profile 的 `.fst`、HydroDyn 或依赖文件定义。
+- **主模块与场景编辑**：以有语义的中英双语选项配置 `CompInflow`、`CompAero`、`CompSeaSt`、`CompHydro`、`CompMooring` 等开关，避免场景与模型上下文混用。
+- **HydroDyn/Morison 联动编辑**：节点、圆柱/矩形截面、构件和水动力系数成组维护；添加、删除或修改共享节点时，关联构件同步更新。
+- **XYZ 几何校核器**：使用仓库内置 Three.js 显示 3D、XY、XZ、YZ 视图，支持水面、海床、波向、节点编号和 `MDivSize` 估算离散点图层；图形与表格选择双向联动。
+- **结构化几何诊断**：即时定位无效坐标、零长度构件、缺失端点/截面、无效尺寸、孤立节点、未引用截面和 v4/v5 格式不兼容。
+- **批量场景运行**：每个 case 在独立 `runs/` 副本中生成和运行，支持 1–4 个并行 worker、断点续跑、失败后继续和同名输出覆盖。
+- **结果与 PSD**：读取 OpenFAST ASCII `.out` 和二进制 `.outb`，显示时程、统计量和 Welch PSD；多随机种子场景可自动生成聚合响应 PSD。
+- **工程扩展**：包含模块插件编辑器、OutList、线性化模态、VTK 查看、TurbSim、FAST.Farm 和独立模块 driver 配置入口。
 
-1. 安装 Python 3.10+。
-2. 安装依赖：
+## 5 分钟启动 / Quick start
+
+要求：Windows、PowerShell、Python 3.10+。
 
 ```powershell
+git clone https://github.com/hunmingtianzi-boop/openfast-gui.git
+cd openfast-gui
 pip install -r .\requirements.txt
-```
-
-3. 放置 OpenFAST 可执行文件：
-
-```text
-bin\openfast_x64.exe
-```
-
-也可以用环境变量覆盖：
-
-```powershell
-$env:OPENFAST_EXE = "D:\path\to\openfast_x64.exe"
-```
-
-4. 放置 FOCAL C4 模型模板，使主输入文件位于：
-
-```text
-FOCAL_OpenFast_C4-main\FOCAL_OpenFast_C4-main\FOCAL_C4.fst
-```
-
-也可以用环境变量覆盖模型模板位置：
-
-```powershell
-$env:FOCAL_C4_MODEL_TEMPLATE = "D:\path\to\FOCAL_OpenFast_C4-main"
-```
-
-本仓库默认不提交 OpenFAST exe、模型模板、实验数据和运行输出，避免 GitHub 仓库过大，也避免把本机二进制和结果误推上去。
-
-## 启动网站
-
-```powershell
 .\scripts\08_start_ui.ps1
 ```
 
-然后打开：
+浏览器打开：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-页面顶部可以选择模型模板和 OpenFAST runtime。v5 是 IEA-15-240-RWT UMaineSemi 的主开发与运行基线；v4 仅保留给现有 FOCAL C4 兼容工作流。当前配置包含：
-
-- `FOCAL C4 semi-submersible` + `OpenFAST v4.0.0 bundled`
-- `IEA-15-240-RWT UMaineSemi` + `OpenFAST v5.0.0 official`
-
-模型和 runtime 来自 [config/model_profiles.json](config/model_profiles.json)。共享配置用 `${WORKSPACE_ROOT}` 表示 `openfast-gui` 的父目录；换电脑或换安装路径时，可在 GUI 的“模型与运行时路径”面板保存字段级本地覆盖到 `config/local_model_profiles.json`。该文件被 `.gitignore` 忽略，不会上传，也不会复制、移动或修改原始模型数据。
-
-如果 8765 端口被占用：
+端口被占用时：
 
 ```powershell
 .\scripts\08_start_ui.ps1 -Port 8766
 ```
 
-## 运行工况
+进入 GUI 后，先在顶部 **“模型、运行时与当前场景 / Model, runtime and current scenario”** 区域完成以下配置：
+
+1. 选择模型 profile。
+2. 选择与模型格式一致的 OpenFAST runtime。
+3. 在“模型与运行时路径”中填写本机模型根目录和 `OpenFAST.exe`。
+4. 确认全局状态条没有阻断项，再编辑或运行场景。
+
+## OpenFAST v5 与 IEA‑15MW
+
+当前主开发基线为：
+
+- `IEA-15-240-RWT UMaineSemi`
+- `OpenFAST v5.0.0 official` 或兼容的 v5 runtime
+- SeaState + HydroDyn v5 输入格式
+- MoorDyn 浮式系泊工作流
+
+OpenFAST v4 继续用于已有 FOCAL C4 输入，不建议用它运行包含矩形 Morison 截面的 v5 HydroDyn 模型。GUI 会在模型、runtime 或 HydroDyn 格式不匹配时阻止提交运行。
+
+共享模型配置位于 [config/model_profiles.json](config/model_profiles.json)。`${WORKSPACE_ROOT}` 表示本仓库的父目录；GUI 保存的本机路径位于被 Git 忽略的 `config/local_model_profiles.json`，因此换电脑时只需重新配置路径，无需修改公共 profile。
+
+> 仓库不附带 NREL/OpenFAST 可执行文件、完整 IEA/FOCAL 模型、实验原始数据或运行结果。请按各模型和工具的许可要求自行准备。
+
+## IEA‑15MW Y 形 Morison 示例
+
+[scenarios/iea_15_240_umaine_y_morison_rectangular.json](scenarios/iea_15_240_umaine_y_morison_rectangular.json) 提供当前 GUI 的综合示例：
+
+- VolturnUS‑S Y 形三柱布局；
+- 三根矩形下浮箱和三根圆形上斜撑；
+- 圆柱与矩形截面、共享节点和 member-based 系数联动；
+- 五个随机种子的 600 s JONSWAP 不规则波试跑；
+- `TMax = WaveTMax = 600 s`；
+- 以 100–600 s 时间窗生成 `Wave1Elev`、`PtfmSurge`、`PtfmHeave`、`PtfmPitch` 聚合 PSD。
+
+在 HydroDyn 页面选择构件后，左侧 XYZ 视图用于几何核对，右侧表单仍是唯一数据入口。首版三维视图不允许拖动节点，避免误改工程参数。
+
+场景中的 `Cd=0.8` 是用于几何和流程验证的未标定先验值，不应直接作为最终设计或论文结论。正式统计建议增加随机种子并使用更长记录。
+
+## 运行不规则波与生成 PSD
+
+GUI 中加载上述场景，确认 readiness 通过后点击运行即可。命令行等价入口：
+
+```powershell
+.\scripts\06_run_scenario_file.ps1 `
+  -Scenario .\scenarios\iea_15_240_umaine_y_morison_rectangular.json `
+  -Workers 4 `
+  -Resume `
+  -Overwrite `
+  -ContinueOnFail
+```
+
+`Resume` 会复用已经成功的 OpenFAST 输出，只补跑缺失或失败的 case。场景完成后，聚合 PSD 默认生成在：
+
+```text
+runs/iea_15_240_umaine_y_morison_rectangular/comparison/
+  response_psd_aggregate.png
+  response_psd_aggregate.pdf
+  response_psd_aggregate.json
+```
+
+结果页也可以手动选择最多 6 个输出文件和 8 个通道，在指定时间窗内查看时程、统计量与 Welch PSD。
+
+## HydroDyn/Morison 几何规则
+
+- 圆柱构件由两端 `PropD` 生成等径圆柱或锥台。
+- 矩形构件由两端 `PropA/PropB` 生成可渐变棱柱。
+- `MSpinOrient` 按 HydroDyn v5 的构件轴右手规则解释。
+- `PropThck` 参与有效性检查；首版不绘制空心内壁。
+- `MDivSize` 图层显示 `ceil(构件长度 / MDivSize)` 的估算离散位置，不替代 OpenFAST `.HD.sum` 中的实际计算节点。
+- 海床使用 `Z = -WtrDpth`，波向 `0°` 指向 `+X`、`90°` 指向 `+Y`。
+
+前端几何诊断负责即时反馈，保存和运行前仍以后端 HydroDyn 校验为权威结果。
+
+## 数据与运行安全
+
+- GUI 只读取模型模板；所有输入修改应用到 `runs/<scenario>/<case>/` 中的副本。
+- 不复制、移动或覆盖用户的原始模型目录。
+- 场景保存使用 revision 检查；另一个标签页已更新同一场景时，旧页面的保存和运行请求会被拒绝，避免静默覆盖。
+- 后端会拒绝场景模型、所选模型和 runtime 不一致的运行请求。
+- `runs/`、`webui/assets/run_plots/`、本机路径配置、二进制和原始数据均由 `.gitignore` 排除。
+
+## 场景与命令行
 
 列出场景：
 
@@ -85,134 +127,60 @@ http://127.0.0.1:8765
 python .\user_tools\run_scenario.py --list-scenarios
 ```
 
-只生成输入文件，不调用 OpenFAST：
+仅生成输入，不启动 OpenFAST：
 
 ```powershell
-.\scripts\06_run_scenario_file.ps1 -Scenario .\scenarios\steady_wind.json -GenerateOnly -Overwrite
-```
-
-运行场景：
-
-```powershell
-.\scripts\06_run_scenario_file.ps1 -Scenario .\scenarios\steady_wind.json -Overwrite -ContinueOnFail
-```
-
-并行运行独立 case（默认仍为 1，GUI 中可选择 1-4）：
-
-```powershell
-.\scripts\06_run_scenario_file.ps1 -Scenario .\scenarios\focal_irregular_wave_compare.json -Workers 2 -Resume -Overwrite -ContinueOnFail
-```
-
-每个 case 使用独立运行目录。`Resume` 会复用已有的成功 summary 与 OpenFAST 输出，仅运行缺失或失败的 case。并行模式会在主进程中按场景顺序更新 `scenario_results.json`，全部 case 完成后再生成聚合图。单个 case 失败且未启用 `ContinueOnFail` 时，不再提交尚未启动的 case；已经启动的 worker 会正常收尾。
-
-命令行指定 IEA-15-240 模型并只生成输入：
-
-```powershell
-$Workspace = (Resolve-Path ..).Path
 .\scripts\06_run_scenario_file.ps1 `
   -Scenario .\scenarios\iea_15_240_steady_wind.json `
-  -Model "$Workspace\01_物理校准工作流\02_starting_model\best_reproducible_model\OpenFAST_input_files" `
-  -OpenFastExe "$Workspace\05_用户工作区\research_slow_drift_15mw\toolchain\openfast-v5.0.0\OpenFAST.exe" `
-  -RuntimeFormat v5 `
-  -Compatibility none `
-  -Fst IEA-15-240-RWT-UMaineSemi.fst `
   -GenerateOnly `
   -Overwrite
 ```
 
-手动覆盖常用参数：
+场景 JSON 支持：
+
+- `model_id`、`runtime_id`
+- 多 case 参数覆盖 `set`
+- `hydrodyn_tables`
+- `input_edits`、`input_file_overrides`
+- `outlist_edits`
+- `comparison`
+- `response_psd`
+
+更多示例和字段说明见 [scenarios/README.md](scenarios/README.md)。
+
+## 仓库结构
+
+```text
+webui/        浏览器前端、HydroDyn 几何与 Three.js 查看器
+user_tools/   本地 API、模型解析、场景运行、结果与 PSD 后处理
+config/       公共模型/runtime profile；本机覆盖文件不提交
+scenarios/    可复用场景 JSON
+scripts/      PowerShell 启动与运行入口
+docs/         模块插件与复现实验说明
+runs/         本机生成的 case、OpenFAST 输出和图表，不提交
+```
+
+模块插件与数据流说明见 [docs/module_plugin_architecture.md](docs/module_plugin_architecture.md)。
+
+## 开发与回归测试
+
+运行全部 Python 测试：
 
 ```powershell
-.\scripts\07_run_general_case.ps1 `
-  -Name wind12p8_wave2m `
-  -TMax 180 `
-  -WindSpeed 12.8 `
-  -WaveMod 1 `
-  -WaveHs 2 `
-  -WaveTp 10 `
-  -Overwrite
+python -m unittest discover -s user_tools -p "test_*.py"
 ```
 
-## HydroDyn 编辑范围
-
-当前 UI 支持：
-
-- `AddCLin`、`AddBLin`、`AddBQuad` 三个 6x6 矩阵。
-- `NAxCoef`、`NJoints`、`NPropSets`、`NCoefMembers`、`NMembers` 等数量字段与对应表格行同步维护。
-- Morison 圆柱/矩形构件、节点、属性、simple/depth/member-based 系数表。
-- 默认以 `MCoefMod=3` 新增构件，并自动补齐同 `MemberID` 的 member coefficient 行。
-- v5 矩形构件可以编辑；只有原生 v5 HydroDyn 模板配合 v5 runtime 才允许写出，legacy/v4 模板会阻止运行。
-
-## 模块编辑器
-
-“模块编辑”页按插件识别 OpenFAST、InflowWind、SeaState、HydroDyn、MoorDyn/MAP、ElastoDyn、AeroDyn/OLAF、ServoDyn/ROSCO、BeamDyn、SubDyn、ExtPtfm、TurbSim 和 FAST.Farm。每个实际模型文件均提供：
-
-- 按源文件 section 排列的类型化标量控件。
-- 自动发现的带单位表格和 6x6 矩阵。
-- 重复 key 与 YAML 的行号级格式保留写回。
-- 未识别或需要增删行时的完整原文覆盖。
-- 当前模块官方文档入口和关键参数预检。
-
-结构化修改保存在 case 的 `input_edits`，完整原文保存在 `input_file_overrides`。runner 只对复制到 `runs/` 的输入应用修改，不写模型模板。插件架构和场景字段见 [docs/module_plugin_architecture.md](docs/module_plugin_architecture.md)。
-
-## 模型结构与 OutList
-
-“模型结构”页会从主 `.fst` 开始递归扫描引用文件，同时纳入模型 profile 中显式配置的文件，显示引用方向、字段、行号、缺失文件和每个文件的普通参数/OutList 数量。扫描只读取模型目录；外部路径会显示为依赖，但不会递归读取。
-
-“输出通道”页按 case 维护各模块的 OutList。修改保存在场景中的 `outlist_edits`：
-
-```json
-{
-  "outlist_edits": [
-    {
-      "file": "FOCAL_C4_HydroDyn.dat",
-      "section": 0,
-      "channels": ["HydroFxi", "HydroFyi", "HydroFzi"]
-    }
-  ]
-}
-```
-
-runner 只在复制出的 `runs/<scenario>/<case>/` 目录内写回这些区块，并在 `scenario_summary.json` 的 `outlist_changes` 中记录修改。旧场景没有 `outlist_edits` 时行为不变。
-
-## 结果工作台
-
-“结果分析”页会扫描 `runs/` 下已有的 OpenFAST 主输出和模块输出，支持 ASCII `.out` 与二进制 `.outb`：
-
-- 同时选择最多 6 个结果文件、8 个通道。
-- 按时间窗读取数据，并将浏览器显示点数限制在 200-8000；统计量仍使用该时间窗的完整数据。
-- 按单位分图显示时程，避免不同物理量共用错误的纵轴。
-- 使用 Welch 方法计算 PSD。
-- 输出最小值、最大值、均值、标准差、RMS、绝对极值、范围和样本数。
-- 导出当前显示数据 CSV、图表 PNG，或通过打印保存 PDF。
-
-大文件分析采用按通道读取，并限制单次原始数据量。超过限制时，界面会要求缩小时间窗或减少通道，不会尝试把整个结果文件发送到浏览器。
-
-## 线性化与 VTK
-
-“线性化 / VTK”页扫描 `runs/`：
-
-- 读取 `.lin` 中的 A/B/C/D 矩阵，对 A 矩阵做特征值分析并显示频率、阻尼、稳定性和主导状态。
-- 读取 ASCII legacy `.vtk`、ASCII XML `.vtp` 和 `.pvd` 清单，并使用仓库内置的 Three.js 三维查看器显示点、线和面。
-- OpenFAST 的线性化可用“线性化设置”预设启用；VTK 可用“VTK 可视化输出”预设启用。
-
-二进制或 appended-data VTP 仍应先通过 ParaView/VTK 转为 ASCII VTP，再由浏览器查看。
-
-## TurbSim、FAST.Farm 与外部接口
-
-“外部接口”页可以生成 TurbSim `.in` 和 FAST.Farm `.fstf` 基准输入、编辑原文、配置可执行文件并启动已安装的工具。外部工具路径保存在被 Git 忽略的 `config/local_tool_profiles.json`，也可通过以下环境变量提供：
-
-- `TURBSIM_EXE`, `FASTFARM_EXE`
-- `AERODYN_DRIVER_EXE`, `HYDRODYN_DRIVER_EXE`, `BEAMDYN_DRIVER_EXE`, `SUBDYN_DRIVER_EXE`
-- `OPENFAST_LIBRARY`, `OPENFAST_SIMULINK_SFUNC`
-
-仓库不附带这些 NREL 可执行文件。本机未配置某个工具时，GUI 会显示 `not-installed` 并禁止启动。已配置工具先在 `runs/external_tools/` 中建立独立运行副本，不直接向模型模板写输出。FAST.Farm 输入格式以[官方 v5 文档](https://openfast.readthedocs.io/en/main/source/user/fast.farm/InputFiles.html)为准；TurbSim 参考[官方用户指南入口](https://openfast.readthedocs.io/en/main/source/user/turbsim/index.html)。
-
-## 开发检查
+检查前端语法与 HydroDyn 几何：
 
 ```powershell
-python -m py_compile .\user_tools\module_plugins.py .\user_tools\openfast_input.py .\user_tools\results_workspace.py .\user_tools\linearization_workspace.py .\user_tools\visualization_workspace.py .\user_tools\tool_inputs.py .\user_tools\run_scenario.py .\user_tools\ui_server.py
-python -m unittest .\user_tools\test_openfast_input.py .\user_tools\test_module_plugins.py .\user_tools\test_results_workspace.py .\user_tools\test_linearization_workspace.py .\user_tools\test_visualization_workspace.py .\user_tools\test_tool_inputs.py .\user_tools\test_hydrodyn_tables.py .\user_tools\test_focal_wave_plot.py .\user_tools\test_parallel_runner.py
+node --check .\webui\app.js
+node --check .\webui\hydro_geometry.js
+node --check .\webui\hydro_viewer.js
+node --test .\webui\test_hydro_geometry.js
 ```
 
-模板模型缺失时，依赖真实 C4 模板的测试会自动跳过；纯解析和 v5 表头测试仍可运行。
+依赖真实模型模板的测试在模板缺失时会跳过；解析、readiness、v5 格式、场景并行和纯几何测试仍可独立运行。
+
+## 项目状态
+
+当前版本定位为本地工程研究工具，重点保证输入副本隔离、模型/runtime 一致性和 HydroDyn 几何可核对。用于设计认证、载荷定型或论文定量结论前，请结合官方 OpenFAST 文档、模型来源说明和独立验证结果进行复核。
